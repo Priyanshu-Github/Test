@@ -14,7 +14,7 @@ param tags object = {}
 resource resourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
   name: name
   location: location
-  tags: tags
+  tags: empty(tags) ? null : tags
 }
 
 output id string = resourceGroup.id

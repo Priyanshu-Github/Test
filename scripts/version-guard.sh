@@ -196,7 +196,6 @@ collect_code_changed_modules() {
   while IFS= read -r file; do
     [[ -z "$file" ]] && continue
     [[ "$file" != "${modules_root}/"* ]] && continue
-    [[ "$file" != *.bicep ]] && continue
 
     local rel_path module_name
     rel_path="${file#${modules_root}/}"

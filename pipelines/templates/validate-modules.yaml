@@ -1,0 +1,37 @@
+parameters:
+  - name: changedModules
+    type: string
+  - name: azureServiceConnection
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: Lint and build changed modules
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+
+        modules_json=$(cat <<'MODULES_JSON_EOF'
+        ${{ parameters.changedModules }}
+        MODULES_JSON_EOF
+        )
+
+        module_count="$(echo "$modules_json" | jq 'length')"
+        if [[ "$module_count" -eq 0 ]]; then
+          echo "No modules to validate."
+          exit 0
+        fi
+
+        while IFS= read -r module; do
+          module_name="$(echo "$module" | jq -r '.name')"
+          module_path="$(echo "$module" | jq -r '.path')"
+
+          echo "========== Linting: $module_name =========="
+          bash scripts/lint.sh "$module_path"
+
+          echo "========== Building: $module_name =========="
+          bash scripts/build.sh "$module_path"
+        done < <(echo "$modules_json" | jq -c '.[]')
