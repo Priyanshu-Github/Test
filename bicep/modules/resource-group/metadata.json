@@ -1,0 +1,6 @@
+{
+  "name": "resource-group",
+  "version": "1.0.0",
+  "description": "Azure Resource Group module for subscription-level deployment",
+  "owner": "platform-team"
+}

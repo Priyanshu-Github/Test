@@ -1,0 +1,121 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - bicep/modules/**
+      - scripts/**
+      - pipelines/**
+      - modules.yaml
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - bicep/modules/**
+      - scripts/**
+      - pipelines/**
+      - modules.yaml
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - name: acrName
+    value: 'youracrname'
+  - name: azureServiceConnection
+    value: 'bicep-registry-sc'
+
+stages:
+  - stage: Detect
+    displayName: Detect changed module versions
+    jobs:
+      - job: ScanModules
+        displayName: Run version governance and detection
+        steps:
+          - checkout: self
+            fetchDepth: 0
+
+          - task: AzureCLI@2
+            name: versionGuard
+            displayName: Detect modules to validate and publish
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: scriptPath
+              scriptPath: scripts/version-guard.sh
+              arguments: 'bicep/modules $(acrName)'
+            env:
+              TARGET_BRANCH: $(System.PullRequest.TargetBranch)
+
+  - stage: Validate
+    displayName: Lint and build detected modules
+    dependsOn: Detect
+    condition: and(succeeded(), eq(dependencies.Detect.outputs['ScanModules.versionGuard.hasChanges'], 'true'))
+    variables:
+      changedModules: $[ stageDependencies.Detect.ScanModules.outputs['versionGuard.changedModules'] ]
+    jobs:
+      - job: ValidateModules
+        displayName: Validate modules selected by version guard
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: AzureCLI@2
+            displayName: Lint and build changed modules
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                modules_json='$(changedModules)'
+                while IFS= read -r module; do
+                  module_name="$(echo "$module" | jq -r '.name')"
+                  module_path="$(echo "$module" | jq -r '.path')"
+
+                  echo "========== Linting: $module_name =========="
+                  bash scripts/lint.sh "$module_path"
+
+                  echo "========== Building: $module_name =========="
+                  bash scripts/build.sh "$module_path"
+                done < <(echo "$modules_json" | jq -c '.[]')
+
+  - stage: Publish
+    displayName: Publish detected module versions
+    dependsOn:
+      - Detect
+      - Validate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(dependencies.Detect.outputs['ScanModules.versionGuard.hasChanges'], 'true'))
+    variables:
+      changedModules: $[ stageDependencies.Detect.ScanModules.outputs['versionGuard.changedModules'] ]
+    jobs:
+      - job: PublishModules
+        displayName: Publish modules selected by version guard
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: AzureCLI@2
+            displayName: Publish changed modules to ACR
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                modules_json='$(changedModules)'
+                acr_name='$(acrName)'
+                while IFS= read -r module; do
+                  module_name="$(echo "$module" | jq -r '.name')"
+                  module_version="$(echo "$module" | jq -r '.version')"
+                  module_path="$(echo "$module" | jq -r '.path')"
+
+                  echo "========== Publishing: $module_name v$module_version =========="
+                  bash scripts/publish.sh "$module_path" "$module_name" "$module_version" "$acr_name"
+                done < <(echo "$modules_json" | jq -c '.[]')

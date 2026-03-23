@@ -1,0 +1,6 @@
+{
+  "name": "storage-account",
+  "version": "1.0.0",
+  "description": "Azure Storage Account module with deny-by-default network posture and shared key access disabled",
+  "owner": "platform-team"
+}

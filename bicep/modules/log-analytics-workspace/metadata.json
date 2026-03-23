@@ -1,0 +1,6 @@
+{
+  "name": "log-analytics-workspace",
+  "version": "1.0.0",
+  "description": "Azure Log Analytics Workspace module for centralized log collection and monitoring",
+  "owner": "platform-team"
+}

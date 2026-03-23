@@ -1,0 +1,45 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - name: azureServiceConnection
+    value: 'bicep-registry-sc'
+  - name: resourceGroupName
+    value: 'rg-bicep-registry'
+  - name: location
+    value: 'eastus2'
+  - name: acrName
+    value: 'youracrname'
+
+stages:
+  - stage: Bootstrap
+    displayName: Bootstrap Bicep Registry ACR
+    jobs:
+      - job: DeployBootstrap
+        displayName: Create RG and deploy ACR
+        steps:
+          - checkout: self
+
+          - task: AzureCLI@2
+            displayName: Deploy bootstrap resources
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+
+                deployment_suffix="${BUILD_BUILDID:-$(date +%s)}"
+
+                az group create \
+                  --name "$(resourceGroupName)" \
+                  --location "$(location)"
+
+                az deployment group create \
+                  --resource-group "$(resourceGroupName)" \
+                  --name "bootstrap-${deployment_suffix}" \
+                  --template-file bootstrap/main.bicep \
+                  --parameters name="$(acrName)" location="$(location)"

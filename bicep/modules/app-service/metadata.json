@@ -1,0 +1,6 @@
+{
+  "name": "app-service",
+  "version": "1.0.0",
+  "description": "Azure App Service Web App module with optional diagnostics",
+  "owner": "platform-team"
+}

@@ -1,0 +1,15 @@
+parameters:
+  - name: modulePath
+    type: string
+  - name: azureServiceConnection
+    type: string
+
+steps:
+  - task: AzureCLI@2
+    displayName: 'Build ${{ parameters.modulePath }}'
+    inputs:
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      scriptType: bash
+      scriptLocation: scriptPath
+      scriptPath: scripts/build.sh
+      arguments: '${{ parameters.modulePath }}'

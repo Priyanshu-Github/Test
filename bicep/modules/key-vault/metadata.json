@@ -1,0 +1,6 @@
+{
+  "name": "key-vault",
+  "version": "1.0.0",
+  "description": "Azure Key Vault module with RBAC-only access model and deny-by-default network posture",
+  "owner": "platform-team"
+}

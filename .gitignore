@@ -1,0 +1,16 @@
+# Compiled ARM JSON from Bicep
+**/main.json
+
+# Claude Code local settings
+.claude/
+CLAUDE.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo

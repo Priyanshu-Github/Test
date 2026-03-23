@@ -1,0 +1,6 @@
+{
+  "name": "app-service-plan",
+  "version": "1.0.0",
+  "description": "Azure App Service Plan module supporting Flex Consumption, Consumption, Elastic Premium, and Dedicated SKUs",
+  "owner": "platform-team"
+}

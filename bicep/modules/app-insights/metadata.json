@@ -1,0 +1,6 @@
+{
+  "name": "app-insights",
+  "version": "1.0.0",
+  "description": "Azure Application Insights module for application performance monitoring and diagnostics",
+  "owner": "platform-team"
+}
