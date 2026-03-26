@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ $# -ne 4 ]]; then
@@ -33,7 +32,7 @@ if existing_tags="$(az acr repository show-tags \
   done <<<"$existing_tags"
 else
   # Repository not found in ACR — this is expected for first-time publishes.
-  if [[ "$existing_tags" == *"RepositoryNotFound"* || "$existing_tags" == *"NAME_UNKNOWN"* || "$existing_tags" == *"repository not found"* || "$existing_tags" == *"does not exist"* ]]; then
+  if [[ "$existing_tags" == *"RepositoryNotFound"* || "$existing_tags" == *"NAME_UNKNOWN"* || "$existing_tags" == *"not found"* || "$existing_tags" == *"does not exist"* ]]; then
     echo "Repository not found in ACR — first-time publish for module '${module_name}'."
   else
     echo "ERROR: Failed to query ACR tags for module '${module_name}'."
@@ -46,3 +45,4 @@ echo "Publishing module: ${module_name}:${module_version}"
 az bicep publish \
   --file "$main_file" \
   --target "$target_ref"
+echo "Publish succeeded: ${module_name}:${module_version}"

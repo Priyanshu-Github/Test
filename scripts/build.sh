@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -16,3 +15,4 @@ fi
 
 echo "Building module: $module_path"
 az bicep build --file "$main_file"
+echo "Build succeeded: $module_path"

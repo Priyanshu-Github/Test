@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ $# -lt 2 || $# -gt 3 ]]; then
@@ -114,7 +113,7 @@ get_acr_tags() {
     return 0
   fi
 
-  if [[ "$output" == *"RepositoryNotFound"* || "$output" == *"NAME_UNKNOWN"* || "$output" == *"repository not found"* || "$output" == *"does not exist"* ]]; then
+  if [[ "$output" == *"RepositoryNotFound"* || "$output" == *"NAME_UNKNOWN"* || "$output" == *"not found"* || "$output" == *"does not exist"* ]]; then
     tags_cache["$module_name"]=""
     tags_loaded["$module_name"]=1
     printf ''

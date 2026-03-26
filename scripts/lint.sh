@@ -1,4 +1,3 @@
-#!/usr/bin/env bash
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
@@ -16,3 +15,4 @@ fi
 
 echo "Linting module: $module_path"
 az bicep lint --file "$main_file"
+echo "Lint succeeded: $module_path"

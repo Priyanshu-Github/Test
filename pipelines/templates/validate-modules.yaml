@@ -14,24 +14,58 @@ steps:
       inlineScript: |
         set -euo pipefail
 
+        # Debug: verify script files are clean (no BOM/CRLF)
+        echo "=== Script file diagnostics ==="
+        for script in scripts/lint.sh scripts/build.sh; do
+          first_bytes="$(xxd -l 4 "$script" | head -1)"
+          line_ending_check="$(file "$script")"
+          echo "  $script -> $line_ending_check"
+          echo "  First 4 bytes: $first_bytes"
+        done
+        echo "==============================="
+
         modules_json=$(cat <<'MODULES_JSON_EOF'
         ${{ parameters.changedModules }}
         MODULES_JSON_EOF
         )
 
         module_count="$(echo "$modules_json" | jq 'length')"
+        echo "Modules to validate: $module_count"
+
         if [[ "$module_count" -eq 0 ]]; then
           echo "No modules to validate."
           exit 0
         fi
 
+        failed=0
         while IFS= read -r module; do
           module_name="$(echo "$module" | jq -r '.name')"
           module_path="$(echo "$module" | jq -r '.path')"
 
+          echo ""
           echo "========== Linting: $module_name =========="
-          bash scripts/lint.sh "$module_path"
+          if bash scripts/lint.sh "$module_path"; then
+            echo "[PASS] Lint: $module_name"
+          else
+            echo "[FAIL] Lint: $module_name"
+            failed=1
+          fi
 
+          echo ""
           echo "========== Building: $module_name =========="
-          bash scripts/build.sh "$module_path"
+          if bash scripts/build.sh "$module_path"; then
+            echo "[PASS] Build: $module_name"
+          else
+            echo "[FAIL] Build: $module_name"
+            failed=1
+          fi
         done < <(echo "$modules_json" | jq -c '.[]')
+
+        echo ""
+        echo "=== Validation Summary ==="
+        if [[ "$failed" -eq 1 ]]; then
+          echo "One or more modules failed validation."
+          exit 1
+        else
+          echo "All $module_count modules passed lint and build."
+        fi

@@ -82,7 +82,7 @@ stages:
     dependsOn:
       - Detect
       - Validate
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(dependencies.Detect.outputs['ScanModules.versionGuard.hasChanges'], 'true'))
+    condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(variables['Build.SourceBranch'], 'refs/heads/feature/config-YAML')), eq(dependencies.Detect.outputs['ScanModules.versionGuard.hasChanges'], 'true'))
     variables:
       changedModules: $[ stageDependencies.Detect.ScanModules.outputs['versionGuard.changedModules'] ]
       acrName: $[ stageDependencies.Detect.ScanModules.outputs['loadConfig.acrName'] ]
