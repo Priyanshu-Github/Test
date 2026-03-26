@@ -5,26 +5,19 @@ pool:
   vmImage: ubuntu-latest
 
 variables:
-  - name: azureServiceConnection
-    value: 'bicep-registry-sc'
-  - name: resourceGroupName
-    value: 'rg-bicep-registry'
-  - name: location
-    value: 'eastus2'
-  - name: acrName
-    value: 'youracrname'
+  - group: bicep-registry-vars
 
 stages:
   - stage: Bootstrap
     displayName: Bootstrap Bicep Registry ACR
     jobs:
-      - job: DeployBootstrap
-        displayName: Create RG and deploy ACR
+      - job: DeployACR
+        displayName: Deploy ACR to existing Resource Group
         steps:
           - checkout: self
 
           - task: AzureCLI@2
-            displayName: Deploy bootstrap resources
+            displayName: Deploy ACR via Bicep
             inputs:
               azureSubscription: $(azureServiceConnection)
               scriptType: bash
@@ -32,14 +25,37 @@ stages:
               inlineScript: |
                 set -euo pipefail
 
+                # Read config from single source of truth
+                config="config/registry.json"
+                acr_name="$(jq -r '.registryName' "$config")"
+                rg_name="$(jq -r '.resourceGroupName' "$config")"
+                location="$(jq -r '.location' "$config")"
+                acr_sku="$(jq -r '.sku' "$config")"
                 deployment_suffix="${BUILD_BUILDID:-$(date +%s)}"
 
-                az group create \
-                  --name "$(resourceGroupName)" \
-                  --location "$(location)"
+                echo "Config loaded from $config"
+                echo "  ACR            : $acr_name"
+                echo "  Resource Group : $rg_name"
+                echo "  Location       : $location"
+                echo "  SKU            : $acr_sku"
 
+                # Validate RG exists
+                if ! az group show --name "$rg_name" --output none 2>/dev/null; then
+                  echo "##vso[task.logissue type=error]Resource Group '$rg_name' does not exist."
+                  exit 1
+                fi
+                echo "Resource Group '$rg_name' found."
+
+                # Deploy ACR
+                echo "Deploying ACR '$acr_name' into '$rg_name'..."
                 az deployment group create \
-                  --resource-group "$(resourceGroupName)" \
+                  --resource-group "$rg_name" \
                   --name "bootstrap-${deployment_suffix}" \
                   --template-file bootstrap/main.bicep \
-                  --parameters name="$(acrName)" location="$(location)"
+                  --parameters \
+                    name="$acr_name" \
+                    location="$location" \
+                    skuName="$acr_sku"
+
+                login_server="$(az acr show --name "$acr_name" --query "loginServer" -o tsv)"
+                echo "ACR deployed: $login_server"

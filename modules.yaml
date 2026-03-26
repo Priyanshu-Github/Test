@@ -8,6 +8,7 @@ trigger:
       - scripts/**
       - pipelines/**
       - modules.yaml
+      - config/registry.json
 
 pr:
   branches:
@@ -19,15 +20,13 @@ pr:
       - scripts/**
       - pipelines/**
       - modules.yaml
+      - config/registry.json
 
 pool:
   vmImage: ubuntu-latest
 
 variables:
-  - name: acrName
-    value: 'youracrname'
-  - name: azureServiceConnection
-    value: 'bicep-registry-sc'
+  - group: bicep-registry-vars
 
 stages:
   - stage: Detect
@@ -39,6 +38,15 @@ stages:
           - checkout: self
             fetchDepth: 0
 
+          - bash: |
+              set -euo pipefail
+              config="config/registry.json"
+              acr_name="$(jq -r '.registryName' "$config")"
+              echo "##vso[task.setvariable variable=acrName;isOutput=true]$acr_name"
+              echo "ACR resolved from config: $acr_name"
+            name: loadConfig
+            displayName: Load registry config
+
           - task: AzureCLI@2
             name: versionGuard
             displayName: Detect modules to validate and publish
@@ -47,7 +55,7 @@ stages:
               scriptType: bash
               scriptLocation: scriptPath
               scriptPath: scripts/version-guard.sh
-              arguments: 'bicep/modules $(acrName)'
+              arguments: 'bicep/modules $(loadConfig.acrName)'
             env:
               TARGET_BRANCH: $(System.PullRequest.TargetBranch)
 
@@ -77,6 +85,7 @@ stages:
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq(dependencies.Detect.outputs['ScanModules.versionGuard.hasChanges'], 'true'))
     variables:
       changedModules: $[ stageDependencies.Detect.ScanModules.outputs['versionGuard.changedModules'] ]
+      acrName: $[ stageDependencies.Detect.ScanModules.outputs['loadConfig.acrName'] ]
     jobs:
       - job: PublishModules
         displayName: Publish modules selected by version guard

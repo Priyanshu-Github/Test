@@ -1,0 +1,6 @@
+{
+  "registryName": "youracrname",
+  "resourceGroupName": "qa-Edison-ml",
+  "location": "centralus",
+  "sku": "Premium"
+}
