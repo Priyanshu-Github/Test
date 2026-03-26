@@ -5,6 +5,16 @@ parameters:
     type: string
 
 steps:
+  - bash: |
+      set -euo pipefail
+      echo "Sanitizing script files (strip BOM and CRLF)..."
+      for script in scripts/*.sh; do
+        sed -i '1s/^\xEF\xBB\xBF//' "$script"
+        sed -i 's/\r$//' "$script"
+      done
+      echo "Scripts sanitized."
+    displayName: Sanitize script files
+
   - task: AzureCLI@2
     displayName: Lint and build changed modules
     inputs:
@@ -13,16 +23,6 @@ steps:
       scriptLocation: inlineScript
       inlineScript: |
         set -euo pipefail
-
-        # Debug: verify script files are clean (no BOM/CRLF)
-        echo "=== Script file diagnostics ==="
-        for script in scripts/lint.sh scripts/build.sh; do
-          first_bytes="$(xxd -l 4 "$script" | head -1)"
-          line_ending_check="$(file "$script")"
-          echo "  $script -> $line_ending_check"
-          echo "  First 4 bytes: $first_bytes"
-        done
-        echo "==============================="
 
         modules_json=$(cat <<'MODULES_JSON_EOF'
         ${{ parameters.changedModules }}
