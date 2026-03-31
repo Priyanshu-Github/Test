@@ -1,0 +1,112 @@
+parameters:
+  - name: bicepFile
+    type: string
+    default: 'apps/shared/main.bicep'
+
+  # QA
+  - name: qaServiceConnection
+    type: string
+  - name: qaResourceGroup
+    type: string
+  - name: qaParamFile
+    type: string
+    default: 'apps/shared/params/qa.bicepparam'
+
+  # UAT
+  - name: uatServiceConnection
+    type: string
+  - name: uatResourceGroup
+    type: string
+  - name: uatParamFile
+    type: string
+    default: 'apps/shared/params/uat.bicepparam'
+
+  # Prod
+  - name: prodServiceConnection
+    type: string
+  - name: prodResourceGroup
+    type: string
+  - name: prodParamFile
+    type: string
+    default: 'apps/shared/params/prod.bicepparam'
+
+stages:
+  # ──────────────────────────────────────────
+  # Stage 1: Validate
+  # ──────────────────────────────────────────
+  - stage: Validate
+    displayName: 'Validate Shared Infra'
+    jobs:
+      - template: ../jobs/bicep-validate.yml
+        parameters:
+          appName: 'shared-infra'
+          serviceConnection: ${{ parameters.qaServiceConnection }}
+          resourceGroup: ${{ parameters.qaResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.qaParamFile }}
+
+  # ──────────────────────────────────────────
+  # Stage 2: Deploy to QA (auto)
+  # ──────────────────────────────────────────
+  - stage: DeployQA
+    displayName: 'Deploy QA — Shared Infra'
+    dependsOn: Validate
+    jobs:
+      - template: ../jobs/bicep-deploy.yml
+        parameters:
+          appName: 'shared-infra'
+          environment: 'qa'
+          serviceConnection: ${{ parameters.qaServiceConnection }}
+          resourceGroup: ${{ parameters.qaResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.qaParamFile }}
+
+  # ──────────────────────────────────────────
+  # Stage 3: Deploy to UAT (manual approval)
+  # ──────────────────────────────────────────
+  - stage: DeployUAT
+    displayName: 'Deploy UAT — Shared Infra'
+    dependsOn: DeployQA
+    jobs:
+      - deployment: ApproveUAT
+        displayName: 'Approve UAT Deployment'
+        environment: 'UAT'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - bash: echo "UAT shared infra deployment approved."
+
+      - template: ../jobs/bicep-deploy.yml
+        parameters:
+          appName: 'shared-infra'
+          environment: 'uat'
+          serviceConnection: ${{ parameters.uatServiceConnection }}
+          resourceGroup: ${{ parameters.uatResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.uatParamFile }}
+
+  # ──────────────────────────────────────────
+  # Stage 4: Deploy to Prod (manual approval)
+  # ──────────────────────────────────────────
+  - stage: DeployProd
+    displayName: 'Deploy Prod — Shared Infra'
+    dependsOn: DeployUAT
+    jobs:
+      - deployment: ApproveProd
+        displayName: 'Approve Prod Deployment'
+        environment: 'Prod'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - bash: echo "Production shared infra deployment approved."
+
+      - template: ../jobs/bicep-deploy.yml
+        parameters:
+          appName: 'shared-infra'
+          environment: 'prod'
+          serviceConnection: ${{ parameters.prodServiceConnection }}
+          resourceGroup: ${{ parameters.prodResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.prodParamFile }}

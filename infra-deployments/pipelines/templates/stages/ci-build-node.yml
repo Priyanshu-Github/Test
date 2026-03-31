@@ -1,0 +1,103 @@
+parameters:
+  - name: appName
+    type: string
+  - name: nodeVersion
+    type: string
+    default: '20.x'
+  - name: artifactFeedName
+    type: string
+  - name: srcDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
+  - name: enableLinting
+    type: boolean
+    default: true
+  - name: enableTests
+    type: boolean
+    default: true
+
+stages:
+  - stage: Build
+    displayName: 'Build & Test — ${{ parameters.appName }}'
+    jobs:
+      - job: BuildAndTest
+        displayName: 'Build Node.js Function App'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: NodeTool@0
+            displayName: 'Set Node.js ${{ parameters.nodeVersion }}'
+            inputs:
+              versionSpec: ${{ parameters.nodeVersion }}
+
+          - bash: npm ci
+            displayName: 'Install Dependencies'
+            workingDirectory: ${{ parameters.srcDirectory }}
+
+          - ${{ if parameters.enableLinting }}:
+            - bash: npm run lint
+              displayName: 'Lint'
+              workingDirectory: ${{ parameters.srcDirectory }}
+
+          - ${{ if parameters.enableTests }}:
+            - bash: npm test
+              displayName: 'Run Unit Tests'
+              workingDirectory: ${{ parameters.srcDirectory }}
+
+            - task: PublishTestResults@2
+              displayName: 'Publish Test Results'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/test-results.xml'
+                mergeTestResults: true
+
+          - bash: npm run build --if-present
+            displayName: 'Build'
+            workingDirectory: ${{ parameters.srcDirectory }}
+
+          - bash: npm prune --production
+            displayName: 'Prune Dev Dependencies'
+            workingDirectory: ${{ parameters.srcDirectory }}
+
+          - task: ArchiveFiles@2
+            displayName: 'Package Function App'
+            inputs:
+              rootFolderOrFile: ${{ parameters.srcDirectory }}
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/${{ parameters.appName }}-$(Build.BuildId).zip'
+
+  - stage: Publish
+    displayName: 'Publish Artifact — ${{ parameters.appName }}'
+    dependsOn: Build
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: PublishArtifact
+        displayName: 'Publish to Azure Artifacts'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - download: current
+            artifact: drop
+            displayName: 'Download Build Output'
+
+          - task: UniversalPackages@0
+            displayName: 'Publish to Feed'
+            inputs:
+              command: 'publish'
+              feedsToUse: 'internal'
+              vstsFeed: ${{ parameters.artifactFeedName }}
+              vstsFeedPublish: ${{ parameters.appName }}
+              publishDirectory: '$(Pipeline.Workspace)/drop'
+              versionOption: 'custom'
+              versionPublish: '$(Build.BuildId)'
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish Pipeline Artifact (backup)'
+            inputs:
+              targetPath: '$(Pipeline.Workspace)/drop'
+              artifactName: 'drop'

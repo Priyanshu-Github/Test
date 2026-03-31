@@ -1,0 +1,34 @@
+# CI Pipeline — new-watcher-function-app
+#
+# This file lives in the APPLICATION REPO (not infra-deployments).
+# Kept here as reference. Copy to the app repo as azure-pipelines.yml.
+#
+# Uses `extends` (not `template`) — developers CANNOT add arbitrary
+# stages, jobs, or steps. This is an Azure DevOps security boundary.
+# Combined with Required Templates in Org Settings, this ensures all
+# pipelines must use approved templates.
+
+trigger:
+  branches:
+    include:
+      - master
+  # feature/* branches do NOT trigger builds — only PRs validate them
+
+pr:
+  branches:
+    include:
+      - master
+
+resources:
+  repositories:
+    - repository: infra
+      type: git
+      name: 'ML Platform/infra-deployments'
+      ref: master
+
+extends:
+  template: pipelines/templates/stages/ci-build-python.yml@infra
+  parameters:
+    appName: 'new-watcher-function-app'
+    pythonVersion: '3.11'
+    artifactFeedName: '<artifact-feed-name>'

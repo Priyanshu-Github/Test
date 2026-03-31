@@ -1,0 +1,49 @@
+parameters:
+  - name: appName
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: bicepFile
+    type: string
+  - name: paramFile
+    type: string
+
+jobs:
+  - job: Validate_${{ replace(parameters.appName, '-', '_') }}
+    displayName: 'Validate Bicep — ${{ parameters.appName }}'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: self
+
+      - task: AzureCLI@2
+        displayName: 'Bicep Build (compile)'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            az bicep build --file ${{ parameters.bicepFile }}
+
+      - task: AzureCLI@2
+        displayName: 'Bicep Lint'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            az bicep lint --file ${{ parameters.bicepFile }}
+
+      - task: AzureCLI@2
+        displayName: 'Preflight Validation'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            az deployment group validate \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --template-file ${{ parameters.bicepFile }} \
+              --parameters ${{ parameters.paramFile }}

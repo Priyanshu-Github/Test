@@ -1,0 +1,49 @@
+# CD Pipeline — new-watcher-function-app
+# Deploys infra (Bicep) + app artifact through QA → UAT → Prod
+# Trigger: push to 'release' branch in the app repo, or manual trigger with artifact version
+
+trigger: none
+
+pr: none
+
+parameters:
+  - name: artifactVersion
+    type: string
+    displayName: 'Artifact version (leave empty to use latest from trigger)'
+    default: ''
+
+variables:
+  - name: resolvedArtifactVersion
+    ${{ if ne(parameters.artifactVersion, '') }}:
+      value: ${{ parameters.artifactVersion }}
+    ${{ else }}:
+      value: '$(Build.BuildId)'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - template: ../templates/stages/release-app.yml
+    parameters:
+      appName: 'new-watcher-function-app'
+      appType: 'function'
+      artifactFeedName: '<artifact-feed-name>'
+      artifactName: 'new-watcher-function-app'
+      artifactVersion: $(resolvedArtifactVersion)
+      bicepFile: 'apps/new-watcher-function-app/main.bicep'
+      healthCheckPath: '/api/health'
+
+      qaServiceConnection: 'sc-infra-qa'
+      qaResourceGroup: 'rg-new-watcher-function-app-qa'
+      qaParamFile: 'apps/new-watcher-function-app/params/qa.bicepparam'
+      qaAppResourceName: 'func-new-watcher-qa'
+
+      uatServiceConnection: 'sc-infra-uat'
+      uatResourceGroup: 'rg-new-watcher-function-app-uat'
+      uatParamFile: 'apps/new-watcher-function-app/params/uat.bicepparam'
+      uatAppResourceName: 'func-new-watcher-uat'
+
+      prodServiceConnection: 'sc-infra-prod'
+      prodResourceGroup: 'rg-new-watcher-function-app-prod'
+      prodParamFile: 'apps/new-watcher-function-app/params/prod.bicepparam'
+      prodAppResourceName: 'func-new-watcher-prod'

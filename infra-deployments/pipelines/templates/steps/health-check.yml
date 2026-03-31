@@ -1,0 +1,29 @@
+parameters:
+  - name: appUrl
+    type: string
+  - name: healthPath
+    type: string
+    default: '/api/health'
+  - name: maxRetries
+    type: number
+    default: 5
+  - name: retryDelaySeconds
+    type: number
+    default: 15
+
+steps:
+  - bash: |
+      URL="${{ parameters.appUrl }}${{ parameters.healthPath }}"
+      echo "Health check: $URL"
+      for i in $(seq 1 ${{ parameters.maxRetries }}); do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+        echo "Attempt $i: HTTP $STATUS"
+        if [ "$STATUS" -eq 200 ]; then
+          echo "Health check passed."
+          exit 0
+        fi
+        sleep ${{ parameters.retryDelaySeconds }}
+      done
+      echo "Health check failed after ${{ parameters.maxRetries }} attempts."
+      exit 1
+    displayName: 'Post-Deploy Health Check'

@@ -1,0 +1,50 @@
+parameters:
+  - name: appName
+    type: string
+  - name: environment
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: bicepFile
+    type: string
+  - name: paramFile
+    type: string
+
+jobs:
+  - job: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
+    displayName: 'Deploy Infra — ${{ parameters.appName }} (${{ parameters.environment }})'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: self
+
+      - task: AzureCLI@2
+        displayName: 'Deploy Bicep to ${{ parameters.environment }}'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            az deployment group create \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --template-file ${{ parameters.bicepFile }} \
+              --parameters ${{ parameters.paramFile }} \
+              --name "${{ parameters.appName }}-$(Build.BuildId)" \
+              --verbose
+        name: deployBicep
+
+      - task: AzureCLI@2
+        displayName: 'Capture Deployment Outputs'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            OUTPUTS=$(az deployment group show \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --name "${{ parameters.appName }}-$(Build.BuildId)" \
+              --query properties.outputs -o json)
+            echo "##vso[task.setvariable variable=deploymentOutputs;isOutput=true]$OUTPUTS"
+        name: outputs

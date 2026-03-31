@@ -1,0 +1,28 @@
+trigger:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - apps/shared/**
+
+pr:
+  branches:
+    include:
+      - master
+  paths:
+    include:
+      - apps/shared/**
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - template: templates/stages/release-shared-infra.yml
+    parameters:
+      qaServiceConnection: 'sc-infra-qa'
+      qaResourceGroup: 'rg-shared-qa'
+      uatServiceConnection: 'sc-infra-uat'
+      uatResourceGroup: 'rg-shared-uat'
+      prodServiceConnection: 'sc-infra-prod'
+      prodResourceGroup: 'rg-shared-prod'

@@ -1,0 +1,133 @@
+# CI Build Template — Python Function Apps
+#
+# Fixes over legacy Template-FunctionApp-Build.yml:
+#   1. Fully parameterized (appName, pythonVersion, feed, etc.)
+#   2. Designed for use with `extends` keyword (security boundary)
+#   3. Adds linting (ruff) and testing (pytest) stages
+#   4. Publish stage gated: only on master merge, NOT on PR
+#   5. Publishes versioned artifact to Azure Artifacts feed (not just pipeline artifacts)
+#   6. Proper stages/jobs/steps hierarchy
+
+parameters:
+  - name: appName
+    type: string
+  - name: pythonVersion
+    type: string
+    default: '3.11'
+  - name: artifactFeedName
+    type: string
+  - name: srcDirectory
+    type: string
+    default: '$(Build.SourcesDirectory)'
+  - name: requirementsFile
+    type: string
+    default: 'requirements.txt'
+  - name: enableLinting
+    type: boolean
+    default: true
+  - name: enableTests
+    type: boolean
+    default: true
+  - name: testCommand
+    type: string
+    default: 'pytest --junitxml=test-results.xml'
+
+stages:
+  # ──────────────────────────────────────────
+  # Stage 1: Build & Test
+  # Runs on EVERY trigger (PR + push to master)
+  # ──────────────────────────────────────────
+  - stage: Build
+    displayName: 'Build & Test — ${{ parameters.appName }}'
+    jobs:
+      - job: BuildAndTest
+        displayName: 'Build Python Function App'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: UsePythonVersion@0
+            displayName: 'Set Python ${{ parameters.pythonVersion }}'
+            inputs:
+              versionSpec: ${{ parameters.pythonVersion }}
+              architecture: 'x64'
+
+          - bash: |
+              python -m pip install --upgrade pip
+              pip install -r ${{ parameters.requirementsFile }}
+            displayName: 'Install Dependencies'
+            workingDirectory: ${{ parameters.srcDirectory }}
+
+          - ${{ if parameters.enableLinting }}:
+            - bash: |
+                pip install ruff
+                ruff check .
+              displayName: 'Lint (ruff)'
+              workingDirectory: ${{ parameters.srcDirectory }}
+
+          - ${{ if parameters.enableTests }}:
+            - bash: |
+                pip install pytest
+                ${{ parameters.testCommand }}
+              displayName: 'Run Unit Tests'
+              workingDirectory: ${{ parameters.srcDirectory }}
+
+            - task: PublishTestResults@2
+              displayName: 'Publish Test Results'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/test-results.xml'
+                mergeTestResults: true
+
+          # Package: install deps into .python_packages for Azure Functions runtime
+          - bash: |
+              pip install --target="./.python_packages/lib/site-packages" -r ${{ parameters.requirementsFile }}
+            displayName: 'Install Dependencies for Packaging'
+            workingDirectory: ${{ parameters.srcDirectory }}
+
+          - task: ArchiveFiles@2
+            displayName: 'Package Function App'
+            inputs:
+              rootFolderOrFile: ${{ parameters.srcDirectory }}
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/${{ parameters.appName }}-$(Build.BuildId).zip'
+
+          # Publish as pipeline artifact so the next stage can pick it up
+          - task: PublishPipelineArtifact@1
+            displayName: 'Upload Build Output'
+            inputs:
+              targetPath: '$(Build.ArtifactStagingDirectory)'
+              artifactName: 'drop'
+
+  # ──────────────────────────────────────────
+  # Stage 2: Publish to Azure Artifacts Feed
+  # ONLY on push to master — skipped for PRs
+  # ──────────────────────────────────────────
+  - stage: Publish
+    displayName: 'Publish Artifact — ${{ parameters.appName }}'
+    dependsOn: Build
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: PublishToFeed
+        displayName: 'Publish to Azure Artifacts'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - download: current
+            artifact: drop
+            displayName: 'Download Build Output'
+
+          - task: UniversalPackages@0
+            displayName: 'Publish Versioned Artifact to Feed'
+            inputs:
+              command: 'publish'
+              feedsToUse: 'internal'
+              vstsFeed: ${{ parameters.artifactFeedName }}
+              vstsFeedPublish: ${{ parameters.appName }}
+              publishDirectory: '$(Pipeline.Workspace)/drop'
+              versionOption: 'custom'
+              versionPublish: '$(Build.BuildId)'
