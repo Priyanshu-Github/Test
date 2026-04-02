@@ -38,17 +38,14 @@ param vnetSubnetId string = ''
 @description('Additional app settings (e.g., Key Vault references)')
 param appSettings array = []
 
-@description('Log Analytics workspace ID for diagnostics — empty disables diagnostics')
-param logAnalyticsWorkspaceId string = ''
-
 @description('Resource tags')
 param tags object = {
   project: 'ml-platform'
   team: 'platform'
 }
 
-// ─── Deploy Function App via ACR module ───
-module functionApp 'br/modules:function-app:1.0.0' = {
+// ─── Deploy Function App via ACR module (Flex Consumption) ───
+module functionApp 'br/modules:function-app-flex:1.0.0' = {
   name: 'deploy-${appName}-${environment}'
   params: {
     name: '${appName}-${environment}'
@@ -57,15 +54,13 @@ module functionApp 'br/modules:function-app:1.0.0' = {
       environment: environment
       app: appName
     })
-    kind: 'functionapp,linux'
     appServicePlanId: appServicePlanId
     storageAccountName: storageAccountName
-    appInsightsConnectionString: appInsightsConnectionString
     functionsWorkerRuntime: 'python'
-    linuxFxVersion: 'Python|3.11'
+    runtimeVersion: '3.11'
+    appInsightsConnectionString: appInsightsConnectionString
     vnetSubnetId: vnetSubnetId
     appSettings: appSettings
-    logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
   }
 }
 

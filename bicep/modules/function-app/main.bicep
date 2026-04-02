@@ -65,7 +65,7 @@ param linuxFxVersion string = ''
 @description('.NET framework version for Windows Function App')
 param netFrameworkVersion string = ''
 
-@description('Always On setting; not supported on Consumption/Flex Consumption plans')
+@description('Always On setting; not supported on Consumption plans')
 param alwaysOn bool = false
 
 @description('FTP/FTPS state')
@@ -101,8 +101,6 @@ param keyVaultReferenceIdentity string = ''
 @description('Additional app settings including Key Vault references')
 param appSettings array = []
 
-@description('Workspace ID for diagnostic settings; empty disables diagnostics')
-param logAnalyticsWorkspaceId string = ''
 
 var storageAccountResourceGroupResolved = !empty(storageAccountResourceGroup)
   ? storageAccountResourceGroup
@@ -207,26 +205,6 @@ resource functionApp 'Microsoft.Web/sites@2025-03-01' = {
       http20Enabled: http20Enabled
       minTlsVersion: minTlsVersion
     }
-  }
-}
-
-resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
-  name: '${name}-diag'
-  scope: functionApp
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-      }
-    ]
   }
 }
 

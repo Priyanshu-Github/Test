@@ -8,5 +8,4 @@ param storageAccountName = '<qa-storage-account-name>'
 // ─── Optional overrides (uncomment only if QA differs from defaults in main.bicep) ───
 // param appInsightsConnectionString = '<qa-app-insights-connection-string>'
 // param vnetSubnetId = '<qa-subnet-resource-id>'
-// param logAnalyticsWorkspaceId = '<qa-log-analytics-workspace-id>'
 // param appSettings = []

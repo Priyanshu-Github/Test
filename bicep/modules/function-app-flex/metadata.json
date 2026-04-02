@@ -1,0 +1,6 @@
+{
+  "name": "function-app-flex",
+  "version": "1.0.0",
+  "description": "Azure Function App module for Flex Consumption (FC1) plans with deployment storage, scale, and runtime configuration",
+  "owner": "platform-team"
+}
