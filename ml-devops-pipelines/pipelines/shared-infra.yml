@@ -1,18 +1,23 @@
+# Shared Infrastructure Pipeline
+#
+# Deploys shared resources (VNet, shared storage, etc.) through environments.
+# Triggered when shared/ folder changes. Shared infra Bicep lives in THIS repo.
+
 trigger:
   branches:
     include:
-      - master
+      - release
   paths:
     include:
-      - apps/shared/**
+      - shared/**
 
 pr:
   branches:
     include:
-      - master
+      - release
   paths:
     include:
-      - apps/shared/**
+      - shared/**
 
 pool:
   vmImage: 'ubuntu-latest'

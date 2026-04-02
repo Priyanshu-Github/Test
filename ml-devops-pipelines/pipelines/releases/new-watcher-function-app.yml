@@ -1,0 +1,62 @@
+# CD Pipeline — new-watcher-function-app
+#
+# Deploys infra (Bicep) + app artifact through QA → UAT → Prod
+# Bicep files (main.bicep + params/) live in the APP REPO.
+# This pipeline checks out the app repo to access them.
+#
+# Trigger: Manual only. Linked to CI pipeline for artifact consumption.
+
+trigger: none
+
+pr: none
+
+resources:
+  repositories:
+    - repository: app-repo
+      type: git
+      name: 'ML Platform/new-watcher-function-app'
+      ref: release
+  pipelines:
+    - pipeline: ci-build
+      # TODO: Update to final pipeline name once standardized
+      source: 'new-watcher-function-app - Priyanshu'
+      trigger: none
+
+variables:
+  # Paths relative to app repo checkout
+  - name: bicepFile
+    value: 'new-watcher-function-app/infra/main.bicep'
+  - name: paramBasePath
+    value: 'new-watcher-function-app/infra/params'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - template: ../templates/stages/release-app.yml
+    parameters:
+      appName: 'new-watcher-function-app'
+      appType: 'function'
+      bicepFile: $(bicepFile)
+      healthCheckPath: '/api/health'
+
+      # QA — auto-deploy (no approval gate)
+      # TODO: Service connection is for testing — replace with sc-infra-qa for production use
+      qaServiceConnection: 'nexworks-devops-nonprod-cus'
+      qaResourceGroup: 'qa-Edison-ml'
+      qaParamFile: '$(paramBasePath)/qa.bicepparam'
+      qaAppResourceName: 'func-new-watcher-qa'
+
+      # UAT — manual approval via Azure DevOps Environment
+      # TODO: Update with real UAT values
+      uatServiceConnection: 'sc-infra-uat'
+      uatResourceGroup: 'rg-new-watcher-function-app-uat'
+      uatParamFile: '$(paramBasePath)/uat.bicepparam'
+      uatAppResourceName: 'func-new-watcher-uat'
+
+      # Prod — manual approval via Azure DevOps Environment
+      # TODO: Update with real Prod values
+      prodServiceConnection: 'sc-infra-prod'
+      prodResourceGroup: 'rg-new-watcher-function-app-prod'
+      prodParamFile: '$(paramBasePath)/prod.bicepparam'
+      prodAppResourceName: 'func-new-watcher-prod'

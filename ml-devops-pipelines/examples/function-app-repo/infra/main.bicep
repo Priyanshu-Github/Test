@@ -1,6 +1,11 @@
 // Orchestrator — new-watcher-function-app
 // References versioned modules from ACR. Does NOT define resources directly.
-// All values injected via .bicepparam files per environment.
+// All environment-specific values injected via .bicepparam files.
+// Common values (runtime, tags, location) have defaults here to keep param files minimal.
+//
+// This file lives in the APP REPO under infra/main.bicep
+
+// ─── Environment-specific params (MUST be in .bicepparam) ───
 
 @description('Deployment environment')
 @allowed([
@@ -10,48 +15,40 @@
 ])
 param environment string
 
-@description('Azure region for all resources')
-param location string
-
-@description('Application name')
-param appName string
-
 @description('Resource ID of the App Service Plan')
 param appServicePlanId string
 
 @description('Name of the storage account used by the Function App')
 param storageAccountName string
 
-@description('Application Insights connection string')
-param appInsightsConnectionString string
+// ─── Params with sensible defaults (override in .bicepparam only if needed) ───
 
-@description('Functions worker runtime')
-@allowed([
-  'python'
-  'node'
-])
-param functionsWorkerRuntime string
+@description('Application name — used for resource naming')
+param appName string = 'func-new-watcher'
 
-@description('Linux FX version (e.g., Python|3.11)')
-param linuxFxVersion string
+@description('Azure region for all resources')
+param location string = 'centralus'
 
-@description('Subnet resource ID for VNet integration')
+@description('Application Insights connection string — empty disables App Insights')
+param appInsightsConnectionString string = ''
+
+@description('Subnet resource ID for VNet integration — empty disables VNet integration')
 param vnetSubnetId string = ''
-
-@description('Resource tags')
-param tags object = {}
 
 @description('Additional app settings (e.g., Key Vault references)')
 param appSettings array = []
 
-@description('Health check path')
-param healthCheckPath string = ''
-
-@description('Log Analytics workspace ID for diagnostics')
+@description('Log Analytics workspace ID for diagnostics — empty disables diagnostics')
 param logAnalyticsWorkspaceId string = ''
 
+@description('Resource tags')
+param tags object = {
+  project: 'ml-platform'
+  team: 'platform'
+}
+
 // ─── Deploy Function App via ACR module ───
-module functionApp 'br/<acr-alias>:function-app:1.0.0' = {
+module functionApp 'br/modules:function-app:1.0.0' = {
   name: 'deploy-${appName}-${environment}'
   params: {
     name: '${appName}-${environment}'
@@ -64,11 +61,10 @@ module functionApp 'br/<acr-alias>:function-app:1.0.0' = {
     appServicePlanId: appServicePlanId
     storageAccountName: storageAccountName
     appInsightsConnectionString: appInsightsConnectionString
-    functionsWorkerRuntime: functionsWorkerRuntime
-    linuxFxVersion: linuxFxVersion
+    functionsWorkerRuntime: 'python'
+    linuxFxVersion: 'Python|3.11'
     vnetSubnetId: vnetSubnetId
     appSettings: appSettings
-    healthCheckPath: healthCheckPath
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
   }
 }

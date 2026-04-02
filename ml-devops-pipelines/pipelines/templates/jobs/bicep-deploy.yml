@@ -17,8 +17,11 @@ jobs:
     displayName: 'Deploy Infra — ${{ parameters.appName }} (${{ parameters.environment }})'
     pool:
       vmImage: 'ubuntu-latest'
+    variables:
+      buildId: $(Build.BuildId)
     steps:
       - checkout: self
+      - checkout: app-repo
 
       - task: AzureCLI@2
         displayName: 'Deploy Bicep to ${{ parameters.environment }}'
@@ -31,7 +34,7 @@ jobs:
               --resource-group ${{ parameters.resourceGroup }} \
               --template-file ${{ parameters.bicepFile }} \
               --parameters ${{ parameters.paramFile }} \
-              --name "${{ parameters.appName }}-$(Build.BuildId)" \
+              --name "${{ parameters.appName }}-$(buildId)" \
               --verbose
         name: deployBicep
 
@@ -44,7 +47,7 @@ jobs:
           inlineScript: |
             OUTPUTS=$(az deployment group show \
               --resource-group ${{ parameters.resourceGroup }} \
-              --name "${{ parameters.appName }}-$(Build.BuildId)" \
+              --name "${{ parameters.appName }}-$(buildId)" \
               --query properties.outputs -o json)
             echo "##vso[task.setvariable variable=deploymentOutputs;isOutput=true]$OUTPUTS"
         name: outputs

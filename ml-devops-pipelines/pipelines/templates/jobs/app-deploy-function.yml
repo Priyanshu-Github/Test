@@ -9,12 +9,6 @@ parameters:
     type: string
   - name: resourceGroup
     type: string
-  - name: artifactFeedName
-    type: string
-  - name: artifactName
-    type: string
-  - name: artifactVersion
-    type: string
   - name: healthCheckPath
     type: string
     default: ''
@@ -32,26 +26,18 @@ jobs:
     steps:
       - checkout: none
 
-      - template: ../steps/download-artifact.yml
-        parameters:
-          artifactFeedName: ${{ parameters.artifactFeedName }}
-          artifactName: ${{ parameters.artifactName }}
-          artifactVersion: ${{ parameters.artifactVersion }}
+      - download: ci-build
+        displayName: 'Download Pipeline Artifact'
+        artifact: drop
 
-      - task: AzureCLI@2
-        displayName: 'Deploy to Function App'
+      - task: AzureFunctionApp@2
+        displayName: 'Deploy to Function App (${{ parameters.environment }})'
         inputs:
           azureSubscription: ${{ parameters.serviceConnection }}
-          scriptType: 'bash'
-          scriptLocation: 'inlineScript'
-          inlineScript: |
-            PACKAGE=$(find $(Pipeline.Workspace)/artifact -name "*.zip" | head -1)
-            echo "Deploying package: $PACKAGE"
-            az functionapp deployment source config-zip \
-              --resource-group ${{ parameters.resourceGroup }} \
-              --name ${{ parameters.functionAppName }} \
-              --src "$PACKAGE" \
-              --verbose
+          appType: 'functionAppLinux'
+          appName: ${{ parameters.functionAppName }}
+          package: '$(Pipeline.Workspace)/ci-build/drop/*.zip'
+          deploymentMethod: 'zipDeploy'
 
       - ${{ if ne(parameters.healthCheckPath, '') }}:
         - template: ../steps/health-check.yml

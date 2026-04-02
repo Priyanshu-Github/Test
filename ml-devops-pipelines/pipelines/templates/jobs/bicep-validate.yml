@@ -17,6 +17,16 @@ jobs:
       vmImage: 'ubuntu-latest'
     steps:
       - checkout: self
+      - checkout: app-repo
+
+      - task: AzureCLI@2
+        displayName: 'Restore Bicep Modules (ACR login)'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            az bicep restore --file ${{ parameters.bicepFile }}
 
       - task: AzureCLI@2
         displayName: 'Bicep Build (compile)'

@@ -1,3 +1,16 @@
+# Release Template — App Deployment (Function App or App Service)
+#
+# Replaces: Template-FunctionApp.yml, Template-FunctionApp-Generic.yml,
+#           Template-DeployAllFunctions.yml
+#
+# Flow: Validate → Deploy QA (auto) → What-If UAT → Approve+Deploy UAT
+#       → What-If Prod → Approve+Deploy Prod
+#
+# Bicep files (main.bicep + params/) live in the APP REPO, not here.
+# The release pipeline checks out the app repo via resources.repositories.
+#
+# App artifact is consumed via pipeline artifacts (resources.pipelines.ci-build).
+
 parameters:
   - name: appName
     type: string
@@ -7,12 +20,6 @@ parameters:
     values:
       - 'function'
       - 'appservice'
-  - name: artifactFeedName
-    type: string
-  - name: artifactName
-    type: string
-  - name: artifactVersion
-    type: string
   - name: bicepFile
     type: string
   - name: healthCheckPath
@@ -51,7 +58,7 @@ parameters:
 
 stages:
   # ──────────────────────────────────────────
-  # Stage 1: Validate
+  # Stage 1: Validate (compile + lint + preflight)
   # ──────────────────────────────────────────
   - stage: Validate
     displayName: 'Validate — ${{ parameters.appName }}'
@@ -88,32 +95,31 @@ stages:
             serviceConnection: ${{ parameters.qaServiceConnection }}
             functionAppName: ${{ parameters.qaAppResourceName }}
             resourceGroup: ${{ parameters.qaResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
-            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
-
-      - ${{ if eq(parameters.appType, 'appservice') }}:
-        - template: ../jobs/app-deploy-appservice.yml
-          parameters:
-            appName: ${{ parameters.appName }}
-            environment: 'qa'
-            serviceConnection: ${{ parameters.qaServiceConnection }}
-            appServiceName: ${{ parameters.qaAppResourceName }}
-            resourceGroup: ${{ parameters.qaResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
             healthCheckPath: ${{ parameters.healthCheckPath }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
 
   # ──────────────────────────────────────────
-  # Stage 3: Deploy to UAT (manual approval)
+  # Stage 3: What-If UAT (preview changes for approvers)
+  # ──────────────────────────────────────────
+  - stage: WhatIfUAT
+    displayName: 'What-If UAT — ${{ parameters.appName }}'
+    dependsOn: DeployQA
+    jobs:
+      - template: ../jobs/bicep-what-if.yml
+        parameters:
+          appName: ${{ parameters.appName }}
+          environment: 'uat'
+          serviceConnection: ${{ parameters.uatServiceConnection }}
+          resourceGroup: ${{ parameters.uatResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.uatParamFile }}
+
+  # ──────────────────────────────────────────
+  # Stage 4: Deploy to UAT (manual approval)
   # ──────────────────────────────────────────
   - stage: DeployUAT
     displayName: 'Deploy UAT — ${{ parameters.appName }}'
-    dependsOn: DeployQA
+    dependsOn: WhatIfUAT
     jobs:
       - deployment: ApproveUAT
         displayName: 'Approve UAT Deployment'
@@ -141,32 +147,31 @@ stages:
             serviceConnection: ${{ parameters.uatServiceConnection }}
             functionAppName: ${{ parameters.uatAppResourceName }}
             resourceGroup: ${{ parameters.uatResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
-            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
-
-      - ${{ if eq(parameters.appType, 'appservice') }}:
-        - template: ../jobs/app-deploy-appservice.yml
-          parameters:
-            appName: ${{ parameters.appName }}
-            environment: 'uat'
-            serviceConnection: ${{ parameters.uatServiceConnection }}
-            appServiceName: ${{ parameters.uatAppResourceName }}
-            resourceGroup: ${{ parameters.uatResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
             healthCheckPath: ${{ parameters.healthCheckPath }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
 
   # ──────────────────────────────────────────
-  # Stage 4: Deploy to Prod (manual approval)
+  # Stage 5: What-If Prod (preview changes for approvers)
+  # ──────────────────────────────────────────
+  - stage: WhatIfProd
+    displayName: 'What-If Prod — ${{ parameters.appName }}'
+    dependsOn: DeployUAT
+    jobs:
+      - template: ../jobs/bicep-what-if.yml
+        parameters:
+          appName: ${{ parameters.appName }}
+          environment: 'prod'
+          serviceConnection: ${{ parameters.prodServiceConnection }}
+          resourceGroup: ${{ parameters.prodResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.prodParamFile }}
+
+  # ──────────────────────────────────────────
+  # Stage 6: Deploy to Prod (manual approval)
   # ──────────────────────────────────────────
   - stage: DeployProd
     displayName: 'Deploy Prod — ${{ parameters.appName }}'
-    dependsOn: DeployUAT
+    dependsOn: WhatIfProd
     jobs:
       - deployment: ApproveProd
         displayName: 'Approve Prod Deployment'
@@ -194,22 +199,5 @@ stages:
             serviceConnection: ${{ parameters.prodServiceConnection }}
             functionAppName: ${{ parameters.prodAppResourceName }}
             resourceGroup: ${{ parameters.prodResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
-            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod
-
-      - ${{ if eq(parameters.appType, 'appservice') }}:
-        - template: ../jobs/app-deploy-appservice.yml
-          parameters:
-            appName: ${{ parameters.appName }}
-            environment: 'prod'
-            serviceConnection: ${{ parameters.prodServiceConnection }}
-            appServiceName: ${{ parameters.prodAppResourceName }}
-            resourceGroup: ${{ parameters.prodResourceGroup }}
-            artifactFeedName: ${{ parameters.artifactFeedName }}
-            artifactName: ${{ parameters.artifactName }}
-            artifactVersion: ${{ parameters.artifactVersion }}
             healthCheckPath: ${{ parameters.healthCheckPath }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod

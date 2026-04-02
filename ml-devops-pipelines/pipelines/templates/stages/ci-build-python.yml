@@ -1,0 +1,115 @@
+# CI Build Template — Python Function Apps / App Services
+#
+# Replaces: Template-FunctionApp-Build.yml, Template-FastAPI-build.yml,
+#           Template-ChatProcessor-FastAPI-PythonCI.yml
+#
+# Design:
+#   1. Fully parameterized (appName, pythonVersion, etc.)
+#   2. Designed for use with `extends` keyword (security boundary)
+#   3. Linting enabled by default, testing opt-in
+#   4. Security scan on dependencies (pip-audit)
+#   5. Build metadata stamped into artifact for traceability
+#   6. Artifact published as pipeline artifact (consumed by release pipeline via resources.pipelines)
+
+parameters:
+  - name: appName
+    type: string
+  - name: pythonVersion
+    type: string
+    default: '3.11'
+  - name: requirementsFile
+    type: string
+    default: 'requirements.txt'
+  - name: enableLinting
+    type: boolean
+    default: true
+  - name: enableSecurityScan
+    type: boolean
+    default: true
+  - name: enableTests
+    type: boolean
+    default: false
+  - name: testCommand
+    type: string
+    default: 'pytest --junitxml=test-results.xml'
+
+stages:
+  - stage: Build
+    displayName: 'Build — ${{ parameters.appName }}'
+    jobs:
+      - job: Build
+        displayName: 'Build Function App'
+        pool:
+          vmImage: 'ubuntu-latest'
+        variables:
+          buildId: $(Build.BuildId)
+          srcDir: $(Build.SourcesDirectory)
+          workDir: $(System.DefaultWorkingDirectory)
+          commitSha: $(Build.SourceVersion)
+          branchName: $(Build.SourceBranchName)
+        steps:
+          - checkout: self
+
+          - task: UsePythonVersion@0
+            displayName: 'Set Python Version to ${{ parameters.pythonVersion }}'
+            inputs:
+              versionSpec: ${{ parameters.pythonVersion }}
+              architecture: 'x64'
+
+          - bash: |
+              python -m pip install --upgrade pip
+              pip install --no-cache-dir -r ${{ parameters.requirementsFile }}
+            displayName: 'Install Dependencies'
+
+          - ${{ if parameters.enableLinting }}:
+            - bash: |
+                pip install ruff
+                echo "Running ruff linter..."
+                ruff check . --output-format=full
+              displayName: 'Lint (ruff)'
+
+          - ${{ if parameters.enableSecurityScan }}:
+            - bash: |
+                pip install pip-audit
+                echo "Scanning dependencies for known vulnerabilities..."
+                pip-audit -r ${{ parameters.requirementsFile }} || true
+                echo "##vso[task.logissue type=warning]Dependency vulnerabilities found — review pipeline logs. Build will continue."
+              displayName: 'Security Scan — Dependencies (warning only)'
+
+          - ${{ if parameters.enableTests }}:
+            - bash: |
+                pip install pytest
+                ${{ parameters.testCommand }}
+              displayName: 'Run Unit Tests'
+
+            - task: PublishTestResults@2
+              displayName: 'Publish Test Results'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/test-results.xml'
+                mergeTestResults: true
+
+          - bash: |
+              pip install --no-cache-dir --target=".python_packages/lib/site-packages" -r ${{ parameters.requirementsFile }}
+            displayName: 'Install Python Libraries for Packaging'
+
+          - bash: |
+              echo "{\"appName\": \"${{ parameters.appName }}\", \"buildId\": \"$(buildId)\", \"commitSha\": \"$(commitSha)\", \"branch\": \"$(branchName)\", \"pythonVersion\": \"${{ parameters.pythonVersion }}\", \"buildDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > build-info.json
+              echo "Build metadata:"
+              cat build-info.json
+            displayName: 'Stamp Build Metadata'
+
+          - task: ArchiveFiles@2
+            displayName: 'Create Zip File'
+            inputs:
+              rootFolderOrFile: $(srcDir)
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(workDir)/builds/${{ parameters.appName }}-$(buildId).zip'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifact'
+            inputs:
+              PathtoPublish: '$(workDir)/builds/${{ parameters.appName }}-$(buildId).zip'
+              artifactName: 'drop'

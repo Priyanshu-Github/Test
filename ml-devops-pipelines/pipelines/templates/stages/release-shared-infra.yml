@@ -1,7 +1,12 @@
+# Release Template — Shared Infrastructure
+#
+# Deploys shared resources (VNet, shared storage, etc.) through environments.
+# Shared infra Bicep lives in THIS repo under shared/.
+
 parameters:
   - name: bicepFile
     type: string
-    default: 'apps/shared/main.bicep'
+    default: 'shared/main.bicep'
 
   # QA
   - name: qaServiceConnection
@@ -10,7 +15,7 @@ parameters:
     type: string
   - name: qaParamFile
     type: string
-    default: 'apps/shared/params/qa.bicepparam'
+    default: 'shared/params/qa.bicepparam'
 
   # UAT
   - name: uatServiceConnection
@@ -19,7 +24,7 @@ parameters:
     type: string
   - name: uatParamFile
     type: string
-    default: 'apps/shared/params/uat.bicepparam'
+    default: 'shared/params/uat.bicepparam'
 
   # Prod
   - name: prodServiceConnection
@@ -28,7 +33,7 @@ parameters:
     type: string
   - name: prodParamFile
     type: string
-    default: 'apps/shared/params/prod.bicepparam'
+    default: 'shared/params/prod.bicepparam'
 
 stages:
   # ──────────────────────────────────────────

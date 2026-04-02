@@ -1,0 +1,39 @@
+parameters:
+  - name: appName
+    type: string
+  - name: environment
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: bicepFile
+    type: string
+  - name: paramFile
+    type: string
+
+jobs:
+  - job: WhatIf_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
+    displayName: 'What-If — ${{ parameters.appName }} (${{ parameters.environment }})'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: self
+      - checkout: app-repo
+
+      - task: AzureCLI@2
+        displayName: 'Bicep What-If (${{ parameters.environment }})'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            echo "============================================"
+            echo " What-If: ${{ parameters.appName }} → ${{ parameters.environment }}"
+            echo "============================================"
+            az deployment group what-if \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --template-file ${{ parameters.bicepFile }} \
+              --parameters ${{ parameters.paramFile }} \
+              --no-pretty-print \
+              --result-format FullResourcePayloads
