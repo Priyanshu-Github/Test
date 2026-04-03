@@ -1,0 +1,414 @@
+# Deploy Function App — Flex Consumption Plan
+#
+# Uses 'az functionapp deployment source config-zip' which internally routes to
+# the OneDeploy API (the ONLY deployment technology supported for Flex Consumption).
+# Do NOT use 'az functionapp deploy --type zip' — it is NOT supported for Flex Consumption.
+#
+# For Python/Node.js apps, --build-remote true triggers server-side dependency install.
+#
+# Includes extensive pre/post diagnostics to pinpoint deployment failures.
+
+parameters:
+  - name: appName
+    type: string
+  - name: environment
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: functionAppName
+    type: string
+  - name: resourceGroup
+    type: string
+  - name: buildRemote
+    type: boolean
+    default: true
+  - name: dependsOn
+    type: string
+    default: ''
+
+jobs:
+  - job: DeployApp_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
+    displayName: 'Deploy App (Flex) — ${{ parameters.appName }} (${{ parameters.environment }})'
+    ${{ if ne(parameters.dependsOn, '') }}:
+      dependsOn: ${{ parameters.dependsOn }}
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: none
+
+      # ──────────────────────────────────────────
+      # Step 1: Download and verify artifact
+      # ──────────────────────────────────────────
+      - download: ci-build
+        displayName: 'Download Pipeline Artifact'
+        artifact: drop
+
+      - bash: |
+          set -e
+          echo "========================================"
+          echo " ARTIFACT VERIFICATION"
+          echo "========================================"
+          echo ""
+          echo "--- Downloaded artifact contents ---"
+          find "$(Pipeline.Workspace)/ci-build/drop" -type f
+          echo ""
+
+          PACKAGE=$(find "$(Pipeline.Workspace)/ci-build/drop" -name "*.zip" | head -1)
+          if [ -z "$PACKAGE" ]; then
+            echo "##vso[task.logissue type=error]No zip file found in artifact"
+            exit 1
+          fi
+
+          PACKAGE_SIZE=$(du -h "$PACKAGE" | cut -f1)
+          echo "Package path: $PACKAGE"
+          echo "Package size: $PACKAGE_SIZE"
+          echo "##vso[task.setvariable variable=packagePath]$PACKAGE"
+        displayName: 'Verify artifact download'
+
+      # ──────────────────────────────────────────
+      # Step 2: Pre-deployment diagnostics
+      # ──────────────────────────────────────────
+      - task: AzureCLI@2
+        displayName: 'Pre-Deploy — Validate Function App'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+            echo "========================================"
+            echo " FUNCTION APP DIAGNOSTICS"
+            echo "========================================"
+            echo ""
+
+            echo "--- 1. Function App overview ---"
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "{name:name, state:state, kind:kind, defaultHostName:defaultHostName, httpsOnly:httpsOnly, publicNetworkAccess:publicNetworkAccess}" \
+              -o table || { echo "##vso[task.logissue type=error]Function App '${{ parameters.functionAppName }}' not found in RG '${{ parameters.resourceGroup }}'"; exit 1; }
+
+            echo ""
+            echo "--- 2. Hosting plan (confirm Flex Consumption / FC1) ---"
+            PLAN_ID=$(az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "appServicePlanId" -o tsv)
+            echo "Plan ID: $PLAN_ID"
+
+            PLAN_SKU=$(az appservice plan show --ids "$PLAN_ID" --query "sku.name" -o tsv 2>/dev/null || echo "UNKNOWN")
+            PLAN_TIER=$(az appservice plan show --ids "$PLAN_ID" --query "sku.tier" -o tsv 2>/dev/null || echo "UNKNOWN")
+            echo "Plan SKU: $PLAN_SKU"
+            echo "Plan Tier: $PLAN_TIER"
+
+            if [ "$PLAN_SKU" != "FC1" ]; then
+              echo "##vso[task.logissue type=warning]Expected FC1 (Flex Consumption) but got SKU=$PLAN_SKU. Deployment method may not be compatible."
+            else
+              echo "Confirmed: Flex Consumption (FC1)"
+            fi
+
+            echo ""
+            echo "--- 3. Function App configuration (deployment storage) ---"
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "functionAppConfig.deployment" -o json 2>/dev/null || echo "Could not retrieve functionAppConfig.deployment"
+
+            echo ""
+            echo "--- 4. Runtime configuration ---"
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "functionAppConfig.runtime" -o json 2>/dev/null || echo "Could not retrieve functionAppConfig.runtime"
+
+            echo ""
+            echo "--- 5. App settings (keys only, values redacted) ---"
+            az functionapp config appsettings list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "[].{name:name, slotSetting:slotSetting}" -o table
+
+            echo ""
+            echo "--- 6. Check for problematic app settings ---"
+            PROBLEMATIC=$(az functionapp config appsettings list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].name" -o tsv)
+            if [ -n "$PROBLEMATIC" ]; then
+              echo "##vso[task.logissue type=warning]WEBSITE_RUN_FROM_PACKAGE is set — this is NOT supported on Flex Consumption and will cause failures!"
+            else
+              echo "No problematic app settings found."
+            fi
+
+      - task: AzureCLI@2
+        displayName: 'Pre-Deploy — Validate Storage Account'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+            echo "========================================"
+            echo " STORAGE ACCOUNT DIAGNOSTICS"
+            echo "========================================"
+            echo ""
+
+            # Extract storage account name from AzureWebJobsStorage or AzureWebJobsStorage__accountName
+            STORAGE_NAME=$(az functionapp config appsettings list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "[?name=='AzureWebJobsStorage__accountName'].value" -o tsv)
+
+            if [ -z "$STORAGE_NAME" ]; then
+              # Try extracting from connection string
+              CONN_STR=$(az functionapp config appsettings list \
+                --name ${{ parameters.functionAppName }} \
+                --resource-group ${{ parameters.resourceGroup }} \
+                --query "[?name=='AzureWebJobsStorage'].value" -o tsv)
+              if [ -n "$CONN_STR" ]; then
+                STORAGE_NAME=$(echo "$CONN_STR" | grep -oP 'AccountName=\K[^;]+' || echo "")
+                echo "Storage account (from connection string): $STORAGE_NAME"
+              fi
+            else
+              echo "Storage account (from identity setting): $STORAGE_NAME"
+            fi
+
+            if [ -z "$STORAGE_NAME" ]; then
+              echo "##vso[task.logissue type=error]Could not determine storage account name from app settings."
+              exit 1
+            fi
+            echo "##vso[task.setvariable variable=storageAccountName]$STORAGE_NAME"
+
+            echo ""
+            echo "--- 1. Storage account properties ---"
+            az storage account show \
+              --name "$STORAGE_NAME" \
+              --query "{name:name, location:location, sku:sku.name, kind:kind, accessTier:accessTier, publicAccess:allowBlobPublicAccess, httpsOnly:supportsHttpsTrafficOnly}" \
+              -o table || { echo "##vso[task.logissue type=error]Storage account '$STORAGE_NAME' not found"; exit 1; }
+
+            echo ""
+            echo "--- 2. Network rules ---"
+            az storage account show \
+              --name "$STORAGE_NAME" \
+              --query "networkRuleSet.{defaultAction:defaultAction, bypass:bypass, ipRules:ipRules, virtualNetworkRules:virtualNetworkRules}" \
+              -o json
+            DEFAULT_ACTION=$(az storage account show \
+              --name "$STORAGE_NAME" \
+              --query "networkRuleSet.defaultAction" -o tsv)
+            if [ "$DEFAULT_ACTION" == "Deny" ]; then
+              echo "##vso[task.logissue type=warning]Storage account network default action is 'Deny'. Pipeline agent may not be able to reach storage. Ensure VNet/firewall rules allow access."
+            else
+              echo "Network access: Open (defaultAction=Allow)"
+            fi
+
+            echo ""
+            echo "--- 3. Deployment container check ---"
+            CONTAINER_EXISTS=$(az storage container exists \
+              --name "deploymentpackage" \
+              --account-name "$STORAGE_NAME" \
+              --auth-mode login \
+              --query "exists" -o tsv 2>/dev/null || echo "UNKNOWN")
+
+            if [ "$CONTAINER_EXISTS" == "true" ]; then
+              echo "Deployment container 'deploymentpackage' exists."
+            elif [ "$CONTAINER_EXISTS" == "false" ]; then
+              echo "##vso[task.logissue type=error]Deployment container 'deploymentpackage' does NOT exist! Bicep should have created it."
+              exit 1
+            else
+              echo "##vso[task.logissue type=warning]Could not verify container existence via login auth. Trying with account key..."
+              CONTAINER_EXISTS_KEY=$(az storage container exists \
+                --name "deploymentpackage" \
+                --account-name "$STORAGE_NAME" \
+                --auth-mode key \
+                --query "exists" -o tsv 2>/dev/null || echo "UNKNOWN")
+              if [ "$CONTAINER_EXISTS_KEY" == "true" ]; then
+                echo "Deployment container 'deploymentpackage' exists (verified via key)."
+              elif [ "$CONTAINER_EXISTS_KEY" == "false" ]; then
+                echo "##vso[task.logissue type=error]Deployment container 'deploymentpackage' does NOT exist!"
+                exit 1
+              else
+                echo "##vso[task.logissue type=warning]Could not verify container existence. Proceeding — deployment will fail if missing."
+              fi
+            fi
+
+            echo ""
+            echo "--- 4. List blobs in deployment container (last 5) ---"
+            az storage blob list \
+              --container-name "deploymentpackage" \
+              --account-name "$STORAGE_NAME" \
+              --auth-mode key \
+              --query "reverse(sort_by([],&properties.lastModified))[:5].{name:name, size:properties.contentLength, modified:properties.lastModified}" \
+              -o table 2>/dev/null || echo "Could not list blobs (may be empty or access denied)."
+
+      # ──────────────────────────────────────────
+      # Step 3: Deploy
+      # ──────────────────────────────────────────
+      - task: AzureCLI@2
+        displayName: 'Deploy to Flex Consumption Function App (${{ parameters.environment }})'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+            echo "========================================"
+            echo " DEPLOYING TO FLEX CONSUMPTION"
+            echo "========================================"
+            echo ""
+            echo "Function App:    ${{ parameters.functionAppName }}"
+            echo "Resource Group:  ${{ parameters.resourceGroup }}"
+            echo "Package:         $(packagePath)"
+            echo "Build Remote:    ${{ parameters.buildRemote }}"
+            echo ""
+
+            # az functionapp deployment source config-zip internally uses OneDeploy API
+            # for Flex Consumption — this is the ONLY supported deployment technology.
+            BUILD_REMOTE_FLAG=""
+            if [ "${{ parameters.buildRemote }}" == "True" ]; then
+              BUILD_REMOTE_FLAG="--build-remote true"
+              echo "Remote build enabled (required for Python/Node.js)"
+            fi
+
+            az functionapp deployment source config-zip \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --name ${{ parameters.functionAppName }} \
+              --src "$(packagePath)" \
+              $BUILD_REMOTE_FLAG \
+              --verbose
+
+            echo ""
+            echo "Deployment command completed successfully."
+
+      # ──────────────────────────────────────────
+      # Step 4: Post-deployment validation
+      # ──────────────────────────────────────────
+      - task: AzureCLI@2
+        displayName: 'Post-Deploy — Validate Deployment'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+            echo "========================================"
+            echo " POST-DEPLOYMENT VALIDATION"
+            echo "========================================"
+            echo ""
+
+            echo "--- 1. Function App state ---"
+            STATE=$(az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "state" -o tsv)
+            echo "State: $STATE"
+
+            if [ "$STATE" != "Running" ]; then
+              echo "##vso[task.logissue type=warning]Function App is not in Running state: $STATE"
+            fi
+
+            echo ""
+            echo "--- 2. Deployment history (last 3) ---"
+            az webapp deployment list-publishing-profiles \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              -o table 2>/dev/null || echo "Could not retrieve publishing profiles."
+
+            echo ""
+            echo "--- 3. List deployed functions ---"
+            az functionapp function list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "[].{name:name, language:language, isDisabled:isDisabled}" \
+              -o table 2>/dev/null || echo "##vso[task.logissue type=warning]Could not list functions. App may still be starting up after deployment."
+
+            echo ""
+            echo "--- 4. Deployment blobs in storage (latest) ---"
+            STORAGE_NAME=$(storageAccountName)
+            if [ -n "$STORAGE_NAME" ]; then
+              az storage blob list \
+                --container-name "deploymentpackage" \
+                --account-name "$STORAGE_NAME" \
+                --auth-mode key \
+                --query "reverse(sort_by([],&properties.lastModified))[:3].{name:name, size:properties.contentLength, modified:properties.lastModified}" \
+                -o table 2>/dev/null || echo "Could not list deployment blobs."
+            fi
+
+            echo ""
+            echo "--- 5. Health check (HTTP ping) ---"
+            HOSTNAME=$(az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "defaultHostName" -o tsv)
+            echo "Host: $HOSTNAME"
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME" --max-time 30 2>/dev/null || echo "TIMEOUT")
+            echo "HTTP Status: $HTTP_STATUS"
+
+            if [ "$HTTP_STATUS" == "200" ] || [ "$HTTP_STATUS" == "204" ] || [ "$HTTP_STATUS" == "401" ] || [ "$HTTP_STATUS" == "403" ]; then
+              echo "Function App is responding."
+            elif [ "$HTTP_STATUS" == "TIMEOUT" ]; then
+              echo "##vso[task.logissue type=warning]Health check timed out. App may have public access disabled or is still starting."
+            else
+              echo "##vso[task.logissue type=warning]Unexpected HTTP status: $HTTP_STATUS"
+            fi
+
+            echo ""
+            echo "========================================"
+            echo " DEPLOYMENT COMPLETE"
+            echo "========================================"
+
+      # Diagnostic step — only runs if deployment failed
+      - task: AzureCLI@2
+        displayName: 'Failure Diagnostics (runs only on failure)'
+        condition: failed()
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            echo "========================================"
+            echo " FAILURE DIAGNOSTICS"
+            echo "========================================"
+            echo ""
+
+            echo "--- 1. Function App detailed state ---"
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              -o json 2>/dev/null || echo "Could not fetch Function App details."
+
+            echo ""
+            echo "--- 2. Recent deployment logs ---"
+            az webapp log deployment list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "reverse(sort_by([],&time))[:5]" \
+              -o table 2>/dev/null || echo "Could not fetch deployment logs."
+
+            echo ""
+            echo "--- 3. Function App deployment storage config ---"
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "functionAppConfig" -o json 2>/dev/null || echo "Could not fetch functionAppConfig."
+
+            echo ""
+            echo "--- 4. All app settings (keys only) ---"
+            az functionapp config appsettings list \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "[].name" -o tsv 2>/dev/null || echo "Could not fetch app settings."
+
+            echo ""
+            echo "--- 5. Managed identity ---"
+            az functionapp identity show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              -o json 2>/dev/null || echo "No managed identity configured."
+
+            echo ""
+            echo "TROUBLESHOOTING TIPS:"
+            echo "  - 403 on blob: Check AzureWebJobsStorage app setting contains valid connection string"
+            echo "  - 403 on blob (identity mode): Ensure managed identity has 'Storage Blob Data Owner' on storage account"
+            echo "  - Container missing: Bicep deploy should create 'deploymentpackage' container"
+            echo "  - WEBSITE_RUN_FROM_PACKAGE: Must NOT be set for Flex Consumption"
+            echo "  - Network: If storage has firewall, pipeline agent must be allowed"

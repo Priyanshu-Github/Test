@@ -1,7 +1,10 @@
 # Release Template — Shared Infrastructure
 #
 # Deploys shared resources (VNet, shared storage, etc.) through environments.
-# Shared infra Bicep lives in THIS repo under shared/.
+# Shared infra Bicep lives in THIS repo under shared/ — no app-repo checkout needed.
+#
+# Flow: Validate → Deploy QA (auto) → What-If UAT → Approve+Deploy UAT
+#       → What-If Prod → Approve+Deploy Prod
 
 parameters:
   - name: bicepFile
@@ -49,6 +52,7 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
+          checkoutApp: false
 
   # ──────────────────────────────────────────
   # Stage 2: Deploy to QA (auto)
@@ -65,13 +69,31 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
+          checkoutApp: false
 
   # ──────────────────────────────────────────
-  # Stage 3: Deploy to UAT (manual approval)
+  # Stage 3: What-If UAT
+  # ──────────────────────────────────────────
+  - stage: WhatIfUAT
+    displayName: 'What-If UAT — Shared Infra'
+    dependsOn: DeployQA
+    jobs:
+      - template: ../jobs/bicep-what-if.yml
+        parameters:
+          appName: 'shared-infra'
+          environment: 'uat'
+          serviceConnection: ${{ parameters.uatServiceConnection }}
+          resourceGroup: ${{ parameters.uatResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.uatParamFile }}
+          checkoutApp: false
+
+  # ──────────────────────────────────────────
+  # Stage 4: Deploy to UAT (manual approval)
   # ──────────────────────────────────────────
   - stage: DeployUAT
     displayName: 'Deploy UAT — Shared Infra'
-    dependsOn: DeployQA
+    dependsOn: WhatIfUAT
     jobs:
       - deployment: ApproveUAT
         displayName: 'Approve UAT Deployment'
@@ -90,13 +112,31 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
+          checkoutApp: false
 
   # ──────────────────────────────────────────
-  # Stage 4: Deploy to Prod (manual approval)
+  # Stage 5: What-If Prod
+  # ──────────────────────────────────────────
+  - stage: WhatIfProd
+    displayName: 'What-If Prod — Shared Infra'
+    dependsOn: DeployUAT
+    jobs:
+      - template: ../jobs/bicep-what-if.yml
+        parameters:
+          appName: 'shared-infra'
+          environment: 'prod'
+          serviceConnection: ${{ parameters.prodServiceConnection }}
+          resourceGroup: ${{ parameters.prodResourceGroup }}
+          bicepFile: ${{ parameters.bicepFile }}
+          paramFile: ${{ parameters.prodParamFile }}
+          checkoutApp: false
+
+  # ──────────────────────────────────────────
+  # Stage 6: Deploy to Prod (manual approval)
   # ──────────────────────────────────────────
   - stage: DeployProd
     displayName: 'Deploy Prod — Shared Infra'
-    dependsOn: DeployUAT
+    dependsOn: WhatIfProd
     jobs:
       - deployment: ApproveProd
         displayName: 'Approve Prod Deployment'
@@ -115,3 +155,4 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
+          checkoutApp: false

@@ -9,9 +9,6 @@ parameters:
     type: string
   - name: resourceGroup
     type: string
-  - name: healthCheckPath
-    type: string
-    default: ''
   - name: dependsOn
     type: string
     default: ''
@@ -30,17 +27,55 @@ jobs:
         displayName: 'Download Pipeline Artifact'
         artifact: drop
 
-      - task: AzureFunctionApp@2
+      - bash: |
+          set -e
+          echo "=== Downloaded artifact contents ==="
+          find "$(Pipeline.Workspace)/ci-build/drop" -type f
+          PACKAGE=$(find "$(Pipeline.Workspace)/ci-build/drop" -name "*.zip" | head -1)
+          if [ -z "$PACKAGE" ]; then
+            echo "##vso[task.logissue type=error]No zip file found in artifact"
+            exit 1
+          fi
+          echo "Package: $PACKAGE"
+          echo "##vso[task.setvariable variable=packagePath]$PACKAGE"
+        displayName: 'Verify artifact download'
+
+      - task: AzureCLI@2
         displayName: 'Deploy to Function App (${{ parameters.environment }})'
         inputs:
           azureSubscription: ${{ parameters.serviceConnection }}
-          appType: 'functionAppLinux'
-          appName: ${{ parameters.functionAppName }}
-          package: '$(Pipeline.Workspace)/ci-build/drop/*.zip'
-          deploymentMethod: 'zipDeploy'
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
 
-      - ${{ if ne(parameters.healthCheckPath, '') }}:
-        - template: ../steps/health-check.yml
-          parameters:
-            appUrl: 'https://${{ parameters.functionAppName }}.azurewebsites.net'
-            healthPath: ${{ parameters.healthCheckPath }}
+            echo "=== Verify Function App exists ==="
+            az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "{name:name, state:state, sku:sku.tier}" -o table
+
+            echo ""
+            echo "=== Deploying $(packagePath) ==="
+            az functionapp deploy \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --name ${{ parameters.functionAppName }} \
+              --src-path "$(packagePath)" \
+              --type zip \
+              --clean true \
+              --restart true \
+              --verbose
+
+            echo ""
+            echo "=== Verify deployment ==="
+            STATE=$(az functionapp show \
+              --name ${{ parameters.functionAppName }} \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --query "state" -o tsv)
+            echo "Function App state: $STATE"
+
+            if [ "$STATE" != "Running" ]; then
+              echo "##vso[task.logissue type=warning]Function App is not in Running state: $STATE"
+            fi
+
+            echo "Deployment completed successfully."

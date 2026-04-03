@@ -1,10 +1,7 @@
 # CD Pipeline — new-watcher-function-app
 #
-# Deploys infra (Bicep) + app artifact through QA → UAT → Prod
-# Bicep files (main.bicep + params/) live in the APP REPO.
-# This pipeline checks out the app repo to access them.
-#
-# Trigger: Manual only. Linked to CI pipeline for artifact consumption.
+# Thin wrapper. All logic lives in templates/stages/release-app.yml.
+# To onboard a new app, copy this file and update the values below.
 
 trigger: none
 
@@ -15,7 +12,8 @@ resources:
     - repository: app-repo
       type: git
       name: 'ML Platform/new-watcher-function-app'
-      ref: release
+      # TODO: Change back to ref: release after testing
+      ref: new-ci-templates
   pipelines:
     - pipeline: ci-build
       # TODO: Update to final pipeline name once standardized
@@ -23,7 +21,6 @@ resources:
       trigger: none
 
 variables:
-  # Paths relative to app repo checkout
   - name: bicepFile
     value: 'new-watcher-function-app/infra/main.bicep'
   - name: paramBasePath
@@ -37,26 +34,26 @@ stages:
     parameters:
       appName: 'new-watcher-function-app'
       appType: 'function'
+      planType: 'flex-consumption'
       bicepFile: $(bicepFile)
-      healthCheckPath: '/api/health'
+      qaParamFile: '$(paramBasePath)/qa.bicepparam'
+      uatParamFile: '$(paramBasePath)/uat.bicepparam'
+      prodParamFile: '$(paramBasePath)/prod.bicepparam'
 
       # QA — auto-deploy (no approval gate)
-      # TODO: Service connection is for testing — replace with sc-infra-qa for production use
+      # TODO: Replace with sc-infra-qa for production use
       qaServiceConnection: 'nexworks-devops-nonprod-cus'
       qaResourceGroup: 'qa-Edison-ml'
-      qaParamFile: '$(paramBasePath)/qa.bicepparam'
       qaAppResourceName: 'func-new-watcher-qa'
 
       # UAT — manual approval via Azure DevOps Environment
       # TODO: Update with real UAT values
-      uatServiceConnection: 'sc-infra-uat'
-      uatResourceGroup: 'rg-new-watcher-function-app-uat'
-      uatParamFile: '$(paramBasePath)/uat.bicepparam'
-      uatAppResourceName: 'func-new-watcher-uat'
+      uatServiceConnection: 'nexworks-devops-nonprod-cus'
+      uatResourceGroup: 'qa-Edison-ml'
+      uatAppResourceName: 'func-new-watcher-qa'
 
       # Prod — manual approval via Azure DevOps Environment
       # TODO: Update with real Prod values
-      prodServiceConnection: 'sc-infra-prod'
-      prodResourceGroup: 'rg-new-watcher-function-app-prod'
-      prodParamFile: '$(paramBasePath)/prod.bicepparam'
-      prodAppResourceName: 'func-new-watcher-prod'
+      prodServiceConnection: 'nexworks-devops-nonprod-cus'
+      prodResourceGroup: 'qa-Edison-ml'
+      prodAppResourceName: 'func-new-watcher-qa'

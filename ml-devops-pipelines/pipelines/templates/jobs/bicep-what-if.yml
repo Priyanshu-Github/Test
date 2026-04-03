@@ -11,6 +11,9 @@ parameters:
     type: string
   - name: paramFile
     type: string
+  - name: checkoutApp
+    type: boolean
+    default: true
 
 jobs:
   - job: WhatIf_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
@@ -19,7 +22,18 @@ jobs:
       vmImage: 'ubuntu-latest'
     steps:
       - checkout: self
-      - checkout: app-repo
+      - ${{ if parameters.checkoutApp }}:
+        - checkout: app-repo
+
+      - task: AzureCLI@2
+        displayName: 'Restore Bicep Modules'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+            az bicep restore --file ${{ parameters.bicepFile }}
 
       - task: AzureCLI@2
         displayName: 'Bicep What-If (${{ parameters.environment }})'
@@ -28,6 +42,7 @@ jobs:
           scriptType: 'bash'
           scriptLocation: 'inlineScript'
           inlineScript: |
+            set -e
             echo "============================================"
             echo " What-If: ${{ parameters.appName }} → ${{ parameters.environment }}"
             echo "============================================"
@@ -35,5 +50,4 @@ jobs:
               --resource-group ${{ parameters.resourceGroup }} \
               --template-file ${{ parameters.bicepFile }} \
               --parameters ${{ parameters.paramFile }} \
-              --no-pretty-print \
               --result-format FullResourcePayloads

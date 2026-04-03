@@ -1,17 +1,17 @@
 # Release Template — App Deployment (Function App or App Service)
 #
-# Replaces: Template-FunctionApp.yml, Template-FunctionApp-Generic.yml,
-#           Template-DeployAllFunctions.yml
-#
 # Flow: Validate → Deploy QA (auto) → What-If UAT → Approve+Deploy UAT
 #       → What-If Prod → Approve+Deploy Prod
 #
 # Bicep files (main.bicep + params/) live in the APP REPO, not here.
 # The release pipeline checks out the app repo via resources.repositories.
-#
 # App artifact is consumed via pipeline artifacts (resources.pipelines.ci-build).
+#
+# Usage: Each app gets a thin wrapper in pipelines/releases/ that sets
+# resources (app-repo + ci-build) and calls this template with app-specific values.
 
 parameters:
+  # ─── App identity ───
   - name: appName
     type: string
   - name: appType
@@ -20,38 +20,46 @@ parameters:
     values:
       - 'function'
       - 'appservice'
+
+  # Flex Consumption requires a different deployment method (OneDeploy via config-zip).
+  # Consumption/Premium/Dedicated plans use the standard zip deploy.
+  - name: planType
+    type: string
+    default: 'consumption'
+    values:
+      - 'consumption'
+      - 'flex-consumption'
+
+  # ─── Bicep paths (relative to multi-repo checkout root) ───
   - name: bicepFile
     type: string
-  - name: healthCheckPath
+  - name: qaParamFile
     type: string
-    default: ''
+  - name: uatParamFile
+    type: string
+  - name: prodParamFile
+    type: string
 
-  # QA
+  # ─── QA (auto-deploy, no approval) ───
   - name: qaServiceConnection
     type: string
   - name: qaResourceGroup
     type: string
-  - name: qaParamFile
-    type: string
   - name: qaAppResourceName
     type: string
 
-  # UAT
+  # ─── UAT (manual approval via Azure DevOps Environment) ───
   - name: uatServiceConnection
     type: string
   - name: uatResourceGroup
     type: string
-  - name: uatParamFile
-    type: string
   - name: uatAppResourceName
     type: string
 
-  # Prod
+  # ─── Prod (manual approval via Azure DevOps Environment) ───
   - name: prodServiceConnection
     type: string
   - name: prodResourceGroup
-    type: string
-  - name: prodParamFile
     type: string
   - name: prodAppResourceName
     type: string
@@ -87,7 +95,7 @@ stages:
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
 
-      - ${{ if eq(parameters.appType, 'function') }}:
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml
           parameters:
             appName: ${{ parameters.appName }}
@@ -95,7 +103,16 @@ stages:
             serviceConnection: ${{ parameters.qaServiceConnection }}
             functionAppName: ${{ parameters.qaAppResourceName }}
             resourceGroup: ${{ parameters.qaResourceGroup }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
+
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+        - template: ../jobs/app-deploy-function-flex.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'qa'
+            serviceConnection: ${{ parameters.qaServiceConnection }}
+            functionAppName: ${{ parameters.qaAppResourceName }}
+            resourceGroup: ${{ parameters.qaResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
 
   # ──────────────────────────────────────────
@@ -139,7 +156,7 @@ stages:
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
 
-      - ${{ if eq(parameters.appType, 'function') }}:
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml
           parameters:
             appName: ${{ parameters.appName }}
@@ -147,7 +164,16 @@ stages:
             serviceConnection: ${{ parameters.uatServiceConnection }}
             functionAppName: ${{ parameters.uatAppResourceName }}
             resourceGroup: ${{ parameters.uatResourceGroup }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
+
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+        - template: ../jobs/app-deploy-function-flex.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'uat'
+            serviceConnection: ${{ parameters.uatServiceConnection }}
+            functionAppName: ${{ parameters.uatAppResourceName }}
+            resourceGroup: ${{ parameters.uatResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
 
   # ──────────────────────────────────────────
@@ -191,7 +217,7 @@ stages:
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
 
-      - ${{ if eq(parameters.appType, 'function') }}:
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml
           parameters:
             appName: ${{ parameters.appName }}
@@ -199,5 +225,14 @@ stages:
             serviceConnection: ${{ parameters.prodServiceConnection }}
             functionAppName: ${{ parameters.prodAppResourceName }}
             resourceGroup: ${{ parameters.prodResourceGroup }}
-            healthCheckPath: ${{ parameters.healthCheckPath }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod
+
+      - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+        - template: ../jobs/app-deploy-function-flex.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'prod'
+            serviceConnection: ${{ parameters.prodServiceConnection }}
+            functionAppName: ${{ parameters.prodAppResourceName }}
+            resourceGroup: ${{ parameters.prodResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod

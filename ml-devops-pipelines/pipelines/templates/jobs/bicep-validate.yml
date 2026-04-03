@@ -9,6 +9,15 @@ parameters:
     type: string
   - name: paramFile
     type: string
+  - name: acrName
+    type: string
+    default: 'qaedisonmoduleregistry'
+  - name: checkoutApp
+    type: boolean
+    default: true
+  - name: enableDebug
+    type: boolean
+    default: false
 
 jobs:
   - job: Validate_${{ replace(parameters.appName, '-', '_') }}
@@ -17,42 +26,43 @@ jobs:
       vmImage: 'ubuntu-latest'
     steps:
       - checkout: self
-      - checkout: app-repo
+      - ${{ if parameters.checkoutApp }}:
+        - checkout: app-repo
 
       - bash: |
           set -e
-          echo "=== Checkout Verification ==="
-          echo "Working directory: $(pwd)"
-          echo ""
-          echo "=== Repo directories ==="
-          ls -la "$(Build.SourcesDirectory)/"
-          echo ""
           echo "=== Verify bicep file exists ==="
-          BICEP_FILE="${{ parameters.bicepFile }}"
-          if [ ! -f "$BICEP_FILE" ]; then
-            echo "##vso[task.logissue type=error]Bicep file not found: $BICEP_FILE"
+          if [ ! -f "${{ parameters.bicepFile }}" ]; then
+            echo "##vso[task.logissue type=error]Bicep file not found: ${{ parameters.bicepFile }}"
             exit 1
           fi
-          echo "Found: $BICEP_FILE"
-          echo ""
+          echo "Found: ${{ parameters.bicepFile }}"
+
           echo "=== Verify param file exists ==="
-          PARAM_FILE="${{ parameters.paramFile }}"
-          if [ ! -f "$PARAM_FILE" ]; then
-            echo "##vso[task.logissue type=error]Param file not found: $PARAM_FILE"
+          if [ ! -f "${{ parameters.paramFile }}" ]; then
+            echo "##vso[task.logissue type=error]Param file not found: ${{ parameters.paramFile }}"
             exit 1
           fi
-          echo "Found: $PARAM_FILE"
-          echo ""
+          echo "Found: ${{ parameters.paramFile }}"
+
           echo "=== Verify bicepconfig.json exists ==="
-          BICEP_DIR="$(dirname "$BICEP_FILE")"
+          BICEP_DIR="$(dirname "${{ parameters.bicepFile }}")"
           if [ ! -f "$BICEP_DIR/bicepconfig.json" ]; then
             echo "##vso[task.logissue type=error]bicepconfig.json not found in $BICEP_DIR — module aliases will not resolve"
             exit 1
           fi
           echo "Found: $BICEP_DIR/bicepconfig.json"
-          echo "Contents:"
-          cat "$BICEP_DIR/bicepconfig.json"
-        displayName: 'Verify checkout and file paths'
+        displayName: 'Verify file paths'
+
+      - ${{ if parameters.enableDebug }}:
+        - bash: |
+            set -e
+            echo "=== Repo directories ==="
+            ls -la "$(Build.SourcesDirectory)/"
+            echo ""
+            echo "=== bicepconfig.json contents ==="
+            cat "$(dirname "${{ parameters.bicepFile }}")/bicepconfig.json"
+          displayName: 'Debug — Dump checkout details'
 
       - task: AzureCLI@2
         displayName: 'Verify ACR connectivity'
@@ -62,9 +72,7 @@ jobs:
           scriptLocation: 'inlineScript'
           inlineScript: |
             set -e
-            echo "Testing ACR connectivity..."
-            az acr show --name qaedisonmoduleregistry --query "loginServer" -o tsv
-            echo "ACR is reachable."
+            az acr show --name ${{ parameters.acrName }} --query "loginServer" -o tsv
 
       - task: AzureCLI@2
         displayName: 'Restore Bicep Modules'
