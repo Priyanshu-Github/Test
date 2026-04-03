@@ -19,13 +19,61 @@ jobs:
       - checkout: self
       - checkout: app-repo
 
+      - bash: |
+          set -e
+          echo "=== Checkout Verification ==="
+          echo "Working directory: $(pwd)"
+          echo ""
+          echo "=== Repo directories ==="
+          ls -la "$(Build.SourcesDirectory)/"
+          echo ""
+          echo "=== Verify bicep file exists ==="
+          BICEP_FILE="${{ parameters.bicepFile }}"
+          if [ ! -f "$BICEP_FILE" ]; then
+            echo "##vso[task.logissue type=error]Bicep file not found: $BICEP_FILE"
+            exit 1
+          fi
+          echo "Found: $BICEP_FILE"
+          echo ""
+          echo "=== Verify param file exists ==="
+          PARAM_FILE="${{ parameters.paramFile }}"
+          if [ ! -f "$PARAM_FILE" ]; then
+            echo "##vso[task.logissue type=error]Param file not found: $PARAM_FILE"
+            exit 1
+          fi
+          echo "Found: $PARAM_FILE"
+          echo ""
+          echo "=== Verify bicepconfig.json exists ==="
+          BICEP_DIR="$(dirname "$BICEP_FILE")"
+          if [ ! -f "$BICEP_DIR/bicepconfig.json" ]; then
+            echo "##vso[task.logissue type=error]bicepconfig.json not found in $BICEP_DIR — module aliases will not resolve"
+            exit 1
+          fi
+          echo "Found: $BICEP_DIR/bicepconfig.json"
+          echo "Contents:"
+          cat "$BICEP_DIR/bicepconfig.json"
+        displayName: 'Verify checkout and file paths'
+
       - task: AzureCLI@2
-        displayName: 'Restore Bicep Modules (ACR login)'
+        displayName: 'Verify ACR connectivity'
         inputs:
           azureSubscription: ${{ parameters.serviceConnection }}
           scriptType: 'bash'
           scriptLocation: 'inlineScript'
           inlineScript: |
+            set -e
+            echo "Testing ACR connectivity..."
+            az acr show --name qaedisonmoduleregistry --query "loginServer" -o tsv
+            echo "ACR is reachable."
+
+      - task: AzureCLI@2
+        displayName: 'Restore Bicep Modules'
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
             az bicep restore --file ${{ parameters.bicepFile }}
 
       - task: AzureCLI@2
@@ -35,6 +83,7 @@ jobs:
           scriptType: 'bash'
           scriptLocation: 'inlineScript'
           inlineScript: |
+            set -e
             az bicep build --file ${{ parameters.bicepFile }}
 
       - task: AzureCLI@2
@@ -44,6 +93,7 @@ jobs:
           scriptType: 'bash'
           scriptLocation: 'inlineScript'
           inlineScript: |
+            set -e
             az bicep lint --file ${{ parameters.bicepFile }}
 
       - task: AzureCLI@2
@@ -53,6 +103,7 @@ jobs:
           scriptType: 'bash'
           scriptLocation: 'inlineScript'
           inlineScript: |
+            set -e
             az deployment group validate \
               --resource-group ${{ parameters.resourceGroup }} \
               --template-file ${{ parameters.bicepFile }} \
