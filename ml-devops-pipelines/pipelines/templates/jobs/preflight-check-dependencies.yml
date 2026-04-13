@@ -1,0 +1,102 @@
+# Preflight Check — Shared Dependencies
+#
+# Reads shared-dependencies.json from the app repo and validates that
+# all required shared resources exist in the target environment BEFORE
+# deploying the app. Fails fast with a clear error if anything is missing.
+#
+# This prevents the app from deploying successfully but crashing at runtime
+# because a shared blob container (or other resource) was never created.
+
+parameters:
+  - name: appName
+    type: string
+  - name: environment
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: storageAccountName
+    type: string
+  - name: dependenciesFile
+    type: string
+    default: ''
+  - name: checkoutApp
+    type: boolean
+    default: true
+
+jobs:
+  - job: PreflightCheck_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
+    displayName: 'Preflight Check — ${{ parameters.appName }} (${{ parameters.environment }})'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: self
+      - ${{ if parameters.checkoutApp }}:
+        - checkout: app-repo
+
+      - bash: |
+          set -e
+          DEP_FILE="${{ parameters.dependenciesFile }}"
+          if [ -z "$DEP_FILE" ]; then
+            echo "No dependencies file specified — skipping preflight check."
+            echo "##vso[task.setvariable variable=skipPreflight]true"
+            exit 0
+          fi
+          if [ ! -f "$DEP_FILE" ]; then
+            echo "Dependencies file not found: $DEP_FILE — skipping preflight check."
+            echo "##vso[task.setvariable variable=skipPreflight]true"
+            exit 0
+          fi
+          echo "Found dependencies file: $DEP_FILE"
+          echo "##vso[task.setvariable variable=skipPreflight]false"
+        displayName: 'Locate dependencies file'
+
+      - task: AzureCLI@2
+        displayName: 'Validate shared blob containers exist'
+        condition: and(succeeded(), ne(variables['skipPreflight'], 'true'))
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+
+            STORAGE_ACCOUNT="${{ parameters.storageAccountName }}"
+            DEP_FILE="${{ parameters.dependenciesFile }}"
+            MISSING=0
+
+            echo "============================================="
+            echo "Preflight: Checking shared blob containers"
+            echo "Storage account: $STORAGE_ACCOUNT"
+            echo "Environment:     ${{ parameters.environment }}"
+            echo "============================================="
+
+            # Parse container names from shared-dependencies.json
+            CONTAINERS=$(jq -r '.sharedStorage.containers[]' "$DEP_FILE" 2>/dev/null)
+
+            if [ -z "$CONTAINERS" ]; then
+              echo "No shared containers declared — nothing to check."
+              exit 0
+            fi
+
+            for CONTAINER in $CONTAINERS; do
+              if az storage container show \
+                --name "$CONTAINER" \
+                --account-name "$STORAGE_ACCOUNT" \
+                --auth-mode login \
+                --only-show-errors \
+                -o none 2>/dev/null; then
+                echo "  [OK]      $CONTAINER"
+              else
+                echo "  [MISSING] $CONTAINER"
+                MISSING=$((MISSING + 1))
+              fi
+            done
+
+            echo "============================================="
+
+            if [ $MISSING -gt 0 ]; then
+              echo "##vso[task.logissue type=error]$MISSING shared container(s) missing in storage account '$STORAGE_ACCOUNT'. Run the shared infra pipeline first."
+              exit 1
+            fi
+
+            echo "All shared containers exist. Preflight passed."

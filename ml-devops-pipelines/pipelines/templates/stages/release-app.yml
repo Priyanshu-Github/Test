@@ -30,6 +30,14 @@ parameters:
       - 'consumption'
       - 'flex-consumption'
 
+  # ─── Shared dependencies preflight ───
+  - name: dependenciesFile
+    type: string
+    default: ''
+  - name: qaStorageAccountName
+    type: string
+    default: ''
+
   # ─── Bicep paths (relative to multi-repo checkout root) ───
   - name: bicepFile
     type: string
@@ -79,6 +87,15 @@ stages:
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
 
+      - ${{ if ne(parameters.dependenciesFile, '') }}:
+        - template: ../jobs/preflight-check-dependencies.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'qa'
+            serviceConnection: ${{ parameters.qaServiceConnection }}
+            storageAccountName: ${{ parameters.qaStorageAccountName }}
+            dependenciesFile: ${{ parameters.dependenciesFile }}
+
   # ──────────────────────────────────────────
   # Stage 2: Deploy to QA (auto — no approval)
   # ──────────────────────────────────────────
@@ -86,6 +103,32 @@ stages:
     displayName: 'Deploy QA — ${{ parameters.appName }}'
     dependsOn: Validate
     jobs:
+      - job: DebugRoute_${{ replace(parameters.appName, '-', '_') }}_qa
+        displayName: 'Debug Route — ${{ parameters.appName }} (qa)'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              echo "appName:   ${{ parameters.appName }}"
+              echo "appType:   ${{ parameters.appType }}"
+              echo "planType:  ${{ parameters.planType }}"
+              echo "stage:     DeployQA"
+            displayName: 'Print resolved parameters'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function.yml"
+              displayName: 'Route selected: function zip deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function-flex.yml"
+              displayName: 'Route selected: function flex deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), not(or(eq(parameters.planType, 'consumption'), eq(parameters.planType, 'flex-consumption')))) }}:
+            - bash: |
+                echo "##vso[task.logissue type=warning]No function deploy template matched for planType='${{ parameters.planType }}'"
+              displayName: 'Route selected: none'
+          - ${{ if ne(parameters.appType, 'function') }}:
+            - bash: echo "No function deploy job expected because appType='${{ parameters.appType }}'"
+              displayName: 'Route selected: non-function app'
+
       - template: ../jobs/bicep-deploy.yml
         parameters:
           appName: ${{ parameters.appName }}
@@ -94,6 +137,24 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
+
+      - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_qa
+        displayName: 'Debug Gate (qa)'
+        dependsOn:
+          - DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
+        condition: always()
+        variables:
+          infraResult: $[ dependencies.DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa.result ]
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              echo "dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa"
+              echo "infraResult: $(infraResult)"
+              echo "NOTE: Blank result is a known Azure DevOps limitation for jobs defined in templates."
+              echo "Check the DeployInfra job status directly in the pipeline UI."
+            displayName: 'Print dependency gate status'
 
       - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml
@@ -147,6 +208,32 @@ stages:
               steps:
                 - bash: echo "UAT deployment approved."
 
+      - job: DebugRoute_${{ replace(parameters.appName, '-', '_') }}_uat
+        displayName: 'Debug Route — ${{ parameters.appName }} (uat)'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              echo "appName:   ${{ parameters.appName }}"
+              echo "appType:   ${{ parameters.appType }}"
+              echo "planType:  ${{ parameters.planType }}"
+              echo "stage:     DeployUAT"
+            displayName: 'Print resolved parameters'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function.yml"
+              displayName: 'Route selected: function zip deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function-flex.yml"
+              displayName: 'Route selected: function flex deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), not(or(eq(parameters.planType, 'consumption'), eq(parameters.planType, 'flex-consumption')))) }}:
+            - bash: |
+                echo "##vso[task.logissue type=warning]No function deploy template matched for planType='${{ parameters.planType }}'"
+              displayName: 'Route selected: none'
+          - ${{ if ne(parameters.appType, 'function') }}:
+            - bash: echo "No function deploy job expected because appType='${{ parameters.appType }}'"
+              displayName: 'Route selected: non-function app'
+
       - template: ../jobs/bicep-deploy.yml
         parameters:
           appName: ${{ parameters.appName }}
@@ -155,6 +242,30 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
+
+      - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_uat
+        displayName: 'Debug Gate — app deploy dependency (uat)'
+        dependsOn:
+          - DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
+        condition: always()
+        variables:
+          infraResult: $[ dependencies.DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat.result ]
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              RESULT="$(infraResult)"
+              echo "dependsOn job: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat"
+              echo "DeployInfra result: '$RESULT'"
+              if [ -z "$RESULT" ]; then
+                echo "##vso[task.logissue type=warning]Runtime expression returned blank — Azure DevOps could not resolve dependencies context for template-included job. Check DeployInfra job status directly in the pipeline UI."
+              elif [ "$RESULT" == "Succeeded" ]; then
+                echo "DeployInfra succeeded. App deploy should proceed."
+              else
+                echo "##vso[task.logissue type=warning]DeployInfra result is '$RESULT' (not Succeeded). App deploy job uses default succeeded() condition and will be skipped."
+              fi
+            displayName: 'Print dependency gate status'
 
       - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml
@@ -208,6 +319,32 @@ stages:
               steps:
                 - bash: echo "Production deployment approved."
 
+      - job: DebugRoute_${{ replace(parameters.appName, '-', '_') }}_prod
+        displayName: 'Debug Route — ${{ parameters.appName }} (prod)'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              echo "appName:   ${{ parameters.appName }}"
+              echo "appType:   ${{ parameters.appType }}"
+              echo "planType:  ${{ parameters.planType }}"
+              echo "stage:     DeployProd"
+            displayName: 'Print resolved parameters'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function.yml"
+              displayName: 'Route selected: function zip deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'flex-consumption')) }}:
+            - bash: echo "Selected deploy template: ../jobs/app-deploy-function-flex.yml"
+              displayName: 'Route selected: function flex deploy'
+          - ${{ if and(eq(parameters.appType, 'function'), not(or(eq(parameters.planType, 'consumption'), eq(parameters.planType, 'flex-consumption')))) }}:
+            - bash: |
+                echo "##vso[task.logissue type=warning]No function deploy template matched for planType='${{ parameters.planType }}'"
+              displayName: 'Route selected: none'
+          - ${{ if ne(parameters.appType, 'function') }}:
+            - bash: echo "No function deploy job expected because appType='${{ parameters.appType }}'"
+              displayName: 'Route selected: non-function app'
+
       - template: ../jobs/bicep-deploy.yml
         parameters:
           appName: ${{ parameters.appName }}
@@ -216,6 +353,30 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
+
+      - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_prod
+        displayName: 'Debug Gate — app deploy dependency (prod)'
+        dependsOn:
+          - DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod
+        condition: always()
+        variables:
+          infraResult: $[ dependencies.DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod.result ]
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - checkout: none
+          - bash: |
+              RESULT="$(infraResult)"
+              echo "dependsOn job: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod"
+              echo "DeployInfra result: '$RESULT'"
+              if [ -z "$RESULT" ]; then
+                echo "##vso[task.logissue type=warning]Runtime expression returned blank — Azure DevOps could not resolve dependencies context for template-included job. Check DeployInfra job status directly in the pipeline UI."
+              elif [ "$RESULT" == "Succeeded" ]; then
+                echo "DeployInfra succeeded. App deploy should proceed."
+              else
+                echo "##vso[task.logissue type=warning]DeployInfra result is '$RESULT' (not Succeeded). App deploy job uses default succeeded() condition and will be skipped."
+              fi
+            displayName: 'Print dependency gate status'
 
       - ${{ if and(eq(parameters.appType, 'function'), eq(parameters.planType, 'consumption')) }}:
         - template: ../jobs/app-deploy-function.yml

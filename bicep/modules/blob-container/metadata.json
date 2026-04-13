@@ -1,0 +1,6 @@
+{
+  "name": "blob-container",
+  "version": "1.0.0",
+  "description": "Azure Blob Storage container module — creates a container on an existing storage account",
+  "owner": "platform-team"
+}

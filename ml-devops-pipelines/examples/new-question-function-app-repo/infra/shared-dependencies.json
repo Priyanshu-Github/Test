@@ -1,0 +1,19 @@
+{
+  "description": "Shared infrastructure resources this app depends on. Validated by preflight check before deployment.",
+  "sharedStorage": {
+    "containers": [
+      "others",
+      "letters",
+      "draft-reports",
+      "metadatas",
+      "fr-results",
+      "text-files",
+      "questions",
+      "info",
+      "checked",
+      "logging",
+      "medical-records",
+      "combined-medical-records"
+    ]
+  }
+}
