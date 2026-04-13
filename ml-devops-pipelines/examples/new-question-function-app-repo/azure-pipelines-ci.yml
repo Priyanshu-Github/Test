@@ -1,0 +1,37 @@
+# CI Pipeline — new-question-function-app
+#
+# This file lives in the APPLICATION REPO.
+# Copy this to your app repo root as azure-pipelines.yml.
+#
+# Uses `extends` (not `template`) — developers CANNOT add arbitrary
+# stages, jobs, or steps. This is an Azure DevOps security boundary.
+# Combined with Required Templates in Org Settings, this ensures all
+# pipelines must use approved templates.
+
+# Auto-trigger: merge to release builds + publishes artifact
+trigger:
+  branches:
+    include:
+      - release
+
+# PR validation: build + test only (no artifact publish)
+pr:
+  branches:
+    include:
+      - release
+
+# Manual runs from feature/* branches are allowed via Azure DevOps UI
+# (Run Pipeline → select branch). Build stage runs, Publish stage is
+# skipped because it gates on branch = release.
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'ML Platform/ml-devops-pipelines'
+      ref: master
+
+extends:
+  template: pipelines/templates/stages/ci-build-python.yml@templates
+  parameters:
+    appName: 'new-question-function-app'

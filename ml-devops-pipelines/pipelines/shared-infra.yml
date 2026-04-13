@@ -1,7 +1,16 @@
 # Shared Infrastructure Pipeline
 #
-# Deploys shared resources (VNet, shared storage, etc.) through environments.
-# Triggered when shared/ folder changes. Shared infra Bicep lives in THIS repo.
+# Deploys shared resources (VNet, shared storage, Key Vault, blob containers)
+# and seeds Key Vault with secrets (derived + external).
+#
+# External secrets flow:
+#   Azure DevOps Variable Group → this pipeline → Key Vault
+#   Apps read from KV at runtime via @Microsoft.KeyVault(...) references.
+#
+# Setup required (one-time, per environment):
+#   1. Create Variable Group "vg-ml-external-secrets-qa" in Azure DevOps
+#      Library with secret variables for each external secret.
+#   2. Authorize this pipeline to access the Variable Group.
 
 trigger:
   branches:
@@ -19,6 +28,13 @@ pr:
     include:
       - shared/**
 
+# ─── Variable Groups ───
+# External secrets that need to be seeded into Key Vault.
+# Create these in Azure DevOps → Pipelines → Library → Variable Groups.
+# Mark each variable as secret (lock icon) so values are masked in logs.
+variables:
+  - group: vg-ml-external-secrets-qa
+
 pool:
   vmImage: 'ubuntu-latest'
 
@@ -31,3 +47,17 @@ stages:
       uatResourceGroup: 'rg-shared-uat'
       prodServiceConnection: 'sc-infra-prod'
       prodResourceGroup: 'rg-shared-prod'
+
+      # ─── KV secret seeding (QA) ───
+      qaKeyVaultName: '<qa-shared-key-vault-name>'
+      qaStorageAccountName: '<qa-shared-storage-account-name>'
+      qaAppInsightsName: '<qa-app-insights-name>'
+      qaAppInsightsResourceGroup: 'rg-shared-qa'
+
+      # External secrets from Variable Group → Key Vault.
+      # Variable names (e.g., $(some-api-key)) must match the Variable Group.
+      externalSecrets:
+        - name: 'some-api-key'
+          value: $(some-api-key)
+        # - name: 'third-party-credential'
+        #   value: $(third-party-credential)

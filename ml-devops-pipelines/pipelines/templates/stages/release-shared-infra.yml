@@ -38,6 +38,23 @@ parameters:
     type: string
     default: 'shared/params/prod.bicepparam'
 
+  # ─── Key Vault secret seeding ───
+  - name: qaKeyVaultName
+    type: string
+    default: ''
+  - name: qaStorageAccountName
+    type: string
+    default: ''
+  - name: qaAppInsightsName
+    type: string
+    default: ''
+  - name: qaAppInsightsResourceGroup
+    type: string
+    default: ''
+  - name: externalSecrets
+    type: object
+    default: []
+
 stages:
   # ──────────────────────────────────────────
   # Stage 1: Validate
@@ -72,11 +89,32 @@ stages:
           checkoutApp: false
 
   # ──────────────────────────────────────────
+  # Stage 2b: Seed Key Vault secrets (QA)
+  # ──────────────────────────────────────────
+  - ${{ if ne(parameters.qaKeyVaultName, '') }}:
+    - stage: SeedSecretsQA
+      displayName: 'Seed KV Secrets — QA'
+      dependsOn: DeployQA
+      jobs:
+        - template: ../jobs/seed-keyvault-secrets.yml
+          parameters:
+            environment: 'qa'
+            serviceConnection: ${{ parameters.qaServiceConnection }}
+            keyVaultName: ${{ parameters.qaKeyVaultName }}
+            storageAccountName: ${{ parameters.qaStorageAccountName }}
+            appInsightsName: ${{ parameters.qaAppInsightsName }}
+            appInsightsResourceGroup: ${{ parameters.qaAppInsightsResourceGroup }}
+            externalSecrets: ${{ parameters.externalSecrets }}
+
+  # ──────────────────────────────────────────
   # Stage 3: What-If UAT
   # ──────────────────────────────────────────
   - stage: WhatIfUAT
     displayName: 'What-If UAT — Shared Infra'
-    dependsOn: DeployQA
+    dependsOn:
+      - DeployQA
+      - ${{ if ne(parameters.qaKeyVaultName, '') }}:
+        - SeedSecretsQA
     jobs:
       - template: ../jobs/bicep-what-if.yml
         parameters:

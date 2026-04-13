@@ -1,0 +1,10 @@
+{
+  "moduleAliases": {
+    "br": {
+      "modules": {
+        "registry": "qaedisonmoduleregistry.azurecr.io",
+        "modulePath": "bicep/modules"
+      }
+    }
+  }
+}

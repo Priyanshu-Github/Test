@@ -36,6 +36,8 @@ stages:
       appName: 'new-question-function-app'
       appType: 'function'
       planType: 'consumption'
+      dependenciesFile: $(dependenciesFile)
+      qaStorageAccountName: '<qa-shared-storage-account-name>'
       bicepFile: $(bicepFile)
       qaParamFile: '$(paramBasePath)/qa.bicepparam'
       uatParamFile: '$(paramBasePath)/uat.bicepparam'
