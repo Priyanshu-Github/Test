@@ -6,9 +6,6 @@ param name string
 @description('Azure region')
 param location string
 
-@description('Resource tags')
-param tags object = {}
-
 @description('Key Vault SKU')
 @allowed([
   'standard'
@@ -58,7 +55,6 @@ param logAnalyticsWorkspaceId string = ''
 resource keyVault 'Microsoft.KeyVault/vaults@2025-05-01' = {
   name: name
   location: location
-  tags: tags
   properties: {
     tenantId: tenant().tenantId
     sku: {

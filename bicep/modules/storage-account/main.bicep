@@ -6,9 +6,6 @@ param name string
 @description('Azure region')
 param location string
 
-@description('Resource tags')
-param tags object = {}
-
 @description('Storage SKU')
 @allowed([
   'Standard_LRS'
@@ -70,7 +67,6 @@ param logAnalyticsWorkspaceId string = ''
 resource storageAccount 'Microsoft.Storage/storageAccounts@2025-06-01' = {
   name: name
   location: location
-  tags: tags
   sku: {
     name: skuName
   }
@@ -83,20 +79,6 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-06-01' = {
     allowSharedKeyAccess: allowSharedKeyAccess
     publicNetworkAccess: publicNetworkAccess
     networkAcls: networkAcls
-  }
-}
-
-resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
-  name: '${name}-diag'
-  scope: storageAccount
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    metrics: [
-      {
-        category: 'Transaction'
-        enabled: true
-      }
-    ]
   }
 }
 

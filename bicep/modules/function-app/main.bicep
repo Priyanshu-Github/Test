@@ -6,9 +6,6 @@ param name string
 @description('Azure region')
 param location string
 
-@description('Resource tags')
-param tags object = {}
-
 @description('Function app kind')
 @allowed([
   'functionapp,linux'
@@ -22,51 +19,20 @@ param appServicePlanId string
 @description('Linked storage account name')
 param storageAccountName string
 
-@description('Storage authentication mode')
-@allowed([
-  'managedIdentity'
-  'connectionString'
-  'userAssigned'
-])
-param storageAuthMode string = 'managedIdentity'
-
 @description('Storage account resource group for cross-resource-group listKeys lookups')
 param storageAccountResourceGroup string = ''
-
-@description('User-assigned managed identity resource ID')
-param userAssignedIdentityResourceId string = ''
-
-@description('User-assigned managed identity client ID')
-param userAssignedIdentityClientId string = ''
 
 @description('Application Insights connection string')
 param appInsightsConnectionString string = ''
 
 @description('Functions extension version')
-@allowed([
-  '~4'
-])
 param functionsExtensionVersion string = '~4'
 
-@description('Functions worker runtime')
-@allowed([
-  'dotnet-isolated'
-  'node'
-  'python'
-  'java'
-  'powershell'
-  'custom'
-])
-param functionsWorkerRuntime string
-
 @description('Linux FX version when deploying Linux Function App')
-param linuxFxVersion string = ''
-
-@description('.NET framework version for Windows Function App')
-param netFrameworkVersion string = ''
+param linuxFxVersion string = 'PYTHON|3.11'
 
 @description('Always On setting; not supported on Consumption plans')
-param alwaysOn bool = false
+param alwaysOn bool = true
 
 @description('FTP/FTPS state')
 @allowed([
@@ -79,12 +45,6 @@ param ftpsState string = 'Disabled'
 @description('Enable HTTP/2')
 param http20Enabled bool = true
 
-@description('Minimum TLS version')
-@allowed([
-  '1.2'
-])
-param minTlsVersion string = '1.2'
-
 @description('Public network access setting')
 @allowed([
   'Enabled'
@@ -92,15 +52,8 @@ param minTlsVersion string = '1.2'
 ])
 param publicNetworkAccess string = 'Disabled'
 
-@description('Subnet resource ID for VNet integration')
-param vnetSubnetId string = ''
-
-@description('Identity resource ID for Key Vault references with user-assigned identity')
-param keyVaultReferenceIdentity string = ''
-
 @description('Additional app settings including Key Vault references')
 param appSettings array = []
-
 
 var storageAccountResourceGroupResolved = !empty(storageAccountResourceGroup)
   ? storageAccountResourceGroup
@@ -110,100 +63,53 @@ var storageAccountResourceId = resourceId(storageAccountResourceGroupResolved, '
 
 var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccountResourceId, '2025-06-01').keys[0].value}'
 
-var storageConnectionStringSettings = storageAuthMode == 'connectionString' ? [
+var baseAppSettings = [
   {
     name: 'AzureWebJobsStorage'
     value: storageConnectionString
   }
-  {
-    name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-    value: storageConnectionString
-  }
-  {
-    name: 'WEBSITE_CONTENTSHARE'
-    value: toLower(name)
-  }
-] : []
-
-var storageManagedIdentitySettings = storageAuthMode == 'managedIdentity' ? [
-  {
-    name: 'AzureWebJobsStorage__accountName'
-    value: storageAccountName
-  }
-] : []
-
-var storageUserAssignedSettings = storageAuthMode == 'userAssigned' ? [
-  {
-    name: 'AzureWebJobsStorage__accountName'
-    value: storageAccountName
-  }
-  {
-    name: 'AzureWebJobsStorage__credential'
-    value: 'managedidentity'
-  }
-  {
-    name: 'AzureWebJobsStorage__clientId'
-    value: userAssignedIdentityClientId
-  }
-] : []
-
-var storageSettings = union(storageConnectionStringSettings, storageManagedIdentitySettings, storageUserAssignedSettings)
-
-var baseAppSettings = [
   {
     name: 'FUNCTIONS_EXTENSION_VERSION'
     value: functionsExtensionVersion
   }
   {
     name: 'FUNCTIONS_WORKER_RUNTIME'
-    value: functionsWorkerRuntime
+    value: 'python'
   }
-]
+  {
+    name:'WEBSITE_RUN_FROM_PACKAGE'
+    value: '1'
+  }
+] 
 
 var appInsightsSettings = !empty(appInsightsConnectionString)
   ? [
       {
-        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+        name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
         value: appInsightsConnectionString
       }
     ]
   : []
 
-var allAppSettings = union(baseAppSettings, storageSettings, appInsightsSettings, appSettings)
-
-var identityType = storageAuthMode == 'userAssigned'
-  ? 'SystemAssigned, UserAssigned'
-  : 'SystemAssigned'
-
-var userAssignedIdentities = storageAuthMode == 'userAssigned'
-  ? {
-      '${userAssignedIdentityResourceId}': {}
-    }
-  : null
+var allAppSettings = union(baseAppSettings, appInsightsSettings, appSettings)
 
 resource functionApp 'Microsoft.Web/sites@2025-03-01' = {
   name: name
   location: location
-  tags: tags
   kind: kind
   identity: {
-    type: identityType
-    userAssignedIdentities: userAssignedIdentities
+    type: 'SystemAssigned'
   }
   properties: {
     serverFarmId: appServicePlanId
     httpsOnly: true
     publicNetworkAccess: publicNetworkAccess
-    virtualNetworkSubnetId: !empty(vnetSubnetId) ? vnetSubnetId : null
-    keyVaultReferenceIdentity: !empty(keyVaultReferenceIdentity) ? keyVaultReferenceIdentity : null
     siteConfig: {
       appSettings: allAppSettings
       linuxFxVersion: !empty(linuxFxVersion) ? linuxFxVersion : null
-      netFrameworkVersion: !empty(netFrameworkVersion) ? netFrameworkVersion : null
       alwaysOn: alwaysOn
       ftpsState: ftpsState
       http20Enabled: http20Enabled
-      minTlsVersion: minTlsVersion
     }
   }
 }
