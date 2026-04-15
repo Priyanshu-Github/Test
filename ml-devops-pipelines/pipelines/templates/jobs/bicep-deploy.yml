@@ -11,9 +11,9 @@ parameters:
     type: string
   - name: paramFile
     type: string
-  - name: checkoutApp
-    type: boolean
-    default: true
+  - name: extraRepos
+    type: object
+    default: []
   - name: enableDebug
     type: boolean
     default: false
@@ -27,8 +27,8 @@ jobs:
       buildId: $(Build.BuildId)
     steps:
       - checkout: self
-      - ${{ if parameters.checkoutApp }}:
-        - checkout: app-repo
+      - ${{ each repo in parameters.extraRepos }}:
+        - checkout: ${{ repo }}
 
       - ${{ if parameters.enableDebug }}:
         - task: AzureCLI@2

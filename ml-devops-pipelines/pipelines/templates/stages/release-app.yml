@@ -30,13 +30,13 @@ parameters:
       - 'consumption'
       - 'flex-consumption'
 
-  # ─── Shared dependencies preflight ───
-  - name: dependenciesFile
-    type: string
-    default: ''
-  - name: qaStorageAccountName
-    type: string
-    default: ''
+  # ─── Shared dependencies preflight (blob owned by app team — disabled) ───
+  # - name: dependenciesFile
+  #   type: string
+  #   default: ''
+  # - name: qaStorageAccountName
+  #   type: string
+  #   default: ''
 
   # ─── Bicep paths (relative to multi-repo checkout root) ───
   - name: bicepFile
@@ -86,15 +86,18 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
+          extraRepos:
+            - app-repo
 
-      - ${{ if ne(parameters.dependenciesFile, '') }}:
-        - template: ../jobs/preflight-check-dependencies.yml
-          parameters:
-            appName: ${{ parameters.appName }}
-            environment: 'qa'
-            serviceConnection: ${{ parameters.qaServiceConnection }}
-            storageAccountName: ${{ parameters.qaStorageAccountName }}
-            dependenciesFile: ${{ parameters.dependenciesFile }}
+      # Blob preflight disabled — blob containers owned by app team
+      # - ${{ if ne(parameters.dependenciesFile, '') }}:
+      #   - template: ../jobs/preflight-check-dependencies.yml
+      #     parameters:
+      #       appName: ${{ parameters.appName }}
+      #       environment: 'qa'
+      #       serviceConnection: ${{ parameters.qaServiceConnection }}
+      #       storageAccountName: ${{ parameters.qaStorageAccountName }}
+      #       dependenciesFile: ${{ parameters.dependenciesFile }}
 
   # ──────────────────────────────────────────
   # Stage 2: Deploy to QA (auto — no approval)
@@ -137,6 +140,8 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
+          extraRepos:
+            - app-repo
 
       - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_qa
         displayName: 'Debug Gate (qa)'
@@ -191,6 +196,8 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
+          extraRepos:
+            - app-repo
 
   # ──────────────────────────────────────────
   # Stage 4: Deploy to UAT (manual approval)
@@ -242,6 +249,8 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
+          extraRepos:
+            - app-repo
 
       - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_uat
         displayName: 'Debug Gate — app deploy dependency (uat)'
@@ -302,6 +311,8 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
+          extraRepos:
+            - app-repo
 
   # ──────────────────────────────────────────
   # Stage 6: Deploy to Prod (manual approval)
@@ -353,6 +364,8 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
+          extraRepos:
+            - app-repo
 
       - job: DebugGate_${{ replace(parameters.appName, '-', '_') }}_prod
         displayName: 'Debug Gate — app deploy dependency (prod)'

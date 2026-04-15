@@ -10,15 +10,13 @@ param storageAccountName = 'stdacedisondemotest'
 
 param keyVaultName = '<qa-shared-key-vault-name>'
 
-// No secrets in this file. Sensitive values (App Insights connection string,
-// API keys, etc.) are stored in Key Vault and referenced via
-// @Microsoft.KeyVault(...) in the orchestrator's app settings.
+// No secrets in this file. All sensitive values are stored in Key Vault
+// and referenced via @Microsoft.KeyVault(...) in the orchestrator.
 
-// ─── App settings — only non-secret, app-specific overrides ───
+// ─── App settings — non-secret, app-specific overrides only ───
 param appSettings = [
-  // Key Vault references for additional secrets:
   // {
-  //   name: 'SOME_API_KEY'
-  //   value: '@Microsoft.KeyVault(VaultName=<qa-shared-key-vault-name>;SecretName=some-api-key)'
+  //   name: 'SOME_NON_SECRET_SETTING'
+  //   value: 'some-value'
   // }
 ]

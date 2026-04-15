@@ -12,9 +12,9 @@ parameters:
   - name: acrName
     type: string
     default: 'qaedisonmoduleregistry'
-  - name: checkoutApp
-    type: boolean
-    default: true
+  - name: extraRepos
+    type: object
+    default: []
   - name: enableDebug
     type: boolean
     default: false
@@ -26,8 +26,25 @@ jobs:
       vmImage: 'ubuntu-latest'
     steps:
       - checkout: self
-      - ${{ if parameters.checkoutApp }}:
-        - checkout: app-repo
+      - ${{ each repo in parameters.extraRepos }}:
+        - checkout: ${{ repo }}
+
+      - bash: |
+          echo "=== Debug: Path Resolution ==="
+          echo "Working directory:        $(pwd)"
+          echo "Build.SourcesDirectory:   $(Build.SourcesDirectory)"
+          echo "Build.Repository.Name:    $(Build.Repository.Name)"
+          echo "System.DefaultWorkingDirectory: $(System.DefaultWorkingDirectory)"
+          echo "Pipeline.Workspace:       $(Pipeline.Workspace)"
+          echo ""
+          echo "=== bicepFile param value: ${{ parameters.bicepFile }} ==="
+          echo ""
+          echo "=== Top-level directory listing ==="
+          ls -la "$(Build.SourcesDirectory)/"
+          echo ""
+          echo "=== Recursive listing (2 levels) ==="
+          find "$(Build.SourcesDirectory)" -maxdepth 3 -type f -name "*.bicep" 2>/dev/null || echo "No .bicep files found"
+        displayName: 'Debug — Directory structure after checkout'
 
       - bash: |
           set -e
@@ -45,13 +62,21 @@ jobs:
           fi
           echo "Found: ${{ parameters.paramFile }}"
 
-          echo "=== Verify bicepconfig.json exists ==="
-          BICEP_DIR="$(dirname "${{ parameters.bicepFile }}")"
-          if [ ! -f "$BICEP_DIR/bicepconfig.json" ]; then
-            echo "##vso[task.logissue type=error]bicepconfig.json not found in $BICEP_DIR — module aliases will not resolve"
+          echo "=== Verify bicepconfig.json exists (Bicep walks up directory tree) ==="
+          SEARCH_DIR="$(cd "$(dirname "${{ parameters.bicepFile }}")" && pwd)"
+          FOUND_CONFIG=""
+          while [ "$SEARCH_DIR" != "/" ]; do
+            if [ -f "$SEARCH_DIR/bicepconfig.json" ]; then
+              FOUND_CONFIG="$SEARCH_DIR/bicepconfig.json"
+              break
+            fi
+            SEARCH_DIR="$(dirname "$SEARCH_DIR")"
+          done
+          if [ -z "$FOUND_CONFIG" ]; then
+            echo "##vso[task.logissue type=error]bicepconfig.json not found in any parent directory of ${{ parameters.bicepFile }} — module aliases will not resolve"
             exit 1
           fi
-          echo "Found: $BICEP_DIR/bicepconfig.json"
+          echo "Found: $FOUND_CONFIG"
         displayName: 'Verify file paths'
 
       - ${{ if parameters.enableDebug }}:

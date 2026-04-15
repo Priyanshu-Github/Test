@@ -42,15 +42,6 @@ parameters:
   - name: qaKeyVaultName
     type: string
     default: ''
-  - name: qaStorageAccountName
-    type: string
-    default: ''
-  - name: qaAppInsightsName
-    type: string
-    default: ''
-  - name: qaAppInsightsResourceGroup
-    type: string
-    default: ''
   - name: externalSecrets
     type: object
     default: []
@@ -69,7 +60,7 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)
 
   # ──────────────────────────────────────────
   # Stage 2: Deploy to QA (auto)
@@ -86,7 +77,7 @@ stages:
           resourceGroup: ${{ parameters.qaResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.qaParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)
 
   # ──────────────────────────────────────────
   # Stage 2b: Seed Key Vault secrets (QA)
@@ -101,9 +92,6 @@ stages:
             environment: 'qa'
             serviceConnection: ${{ parameters.qaServiceConnection }}
             keyVaultName: ${{ parameters.qaKeyVaultName }}
-            storageAccountName: ${{ parameters.qaStorageAccountName }}
-            appInsightsName: ${{ parameters.qaAppInsightsName }}
-            appInsightsResourceGroup: ${{ parameters.qaAppInsightsResourceGroup }}
             externalSecrets: ${{ parameters.externalSecrets }}
 
   # ──────────────────────────────────────────
@@ -124,7 +112,7 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)
 
   # ──────────────────────────────────────────
   # Stage 4: Deploy to UAT (manual approval)
@@ -150,7 +138,7 @@ stages:
           resourceGroup: ${{ parameters.uatResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.uatParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)
 
   # ──────────────────────────────────────────
   # Stage 5: What-If Prod
@@ -167,7 +155,7 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)
 
   # ──────────────────────────────────────────
   # Stage 6: Deploy to Prod (manual approval)
@@ -193,4 +181,4 @@ stages:
           resourceGroup: ${{ parameters.prodResourceGroup }}
           bicepFile: ${{ parameters.bicepFile }}
           paramFile: ${{ parameters.prodParamFile }}
-          checkoutApp: false
+          # extraRepos not passed — defaults to [] (self-only checkout)

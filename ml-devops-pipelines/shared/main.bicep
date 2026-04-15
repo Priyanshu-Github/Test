@@ -14,11 +14,11 @@
 ])
 param environment string
 
-@description('Name of the shared storage account')
-param storageAccountName string
+// Blob containers are owned by the application team — not managed here.
+// param storageAccountName string
 
-@description('Name of the shared Key Vault')
-param keyVaultName string
+@description('Name of the shared Key Vault — empty skips Key Vault deployment')
+param keyVaultName string = ''
 
 // ─── Params with sensible defaults ───
 
@@ -48,8 +48,8 @@ param tags object = {
 // RBAC-only (no access policies). enabledForTemplateDeployment allows
 // the pipeline to read secrets during Bicep deployment if needed.
 
-module sharedKeyVault 'br/modules:key-vault:1.0.0' = {
-  name: 'deploy-shared-key-vault'
+module sharedKeyVault 'br/modules:key-vault:1.0.0' = if (!empty(keyVaultName)) {
+  name: 'deploy-shared-key-vault-${environment}'
   params: {
     name: keyVaultName
     location: location
@@ -59,36 +59,33 @@ module sharedKeyVault 'br/modules:key-vault:1.0.0' = {
 }
 
 // ─── Shared blob containers ───
-// These container names are hardcoded in application code across multiple Function Apps.
-// Do NOT rename without corresponding app code changes in ALL consuming apps.
-
-var sharedContainerNames = [
-  'others'
-  'letters'
-  'draft-reports'
-  'metadatas'
-  'fr-results'
-  'text-files'
-  'questions'
-  'info'
-  'checked'
-  'logging'
-  'medical-records'
-  'combined-medical-records'
-]
-
-// ─── Deploy shared blob containers via ACR module ───
-
-module sharedContainers 'br/modules:blob-container:1.0.0' = [for name in sharedContainerNames: {
-  name: 'deploy-container-${name}'
-  params: {
-    storageAccountName: storageAccountName
-    containerName: name
-  }
-}]
+// Blob containers are owned and created by the application team.
+// The blob-container module is available in the registry if they need it.
+// var sharedContainerNames = [
+//   'others'
+//   'letters'
+//   'draft-reports'
+//   'metadatas'
+//   'fr-results'
+//   'text-files'
+//   'questions'
+//   'info'
+//   'checked'
+//   'logging'
+//   'medical-records'
+//   'combined-medical-records'
+// ]
+//
+// module sharedContainers 'br/modules:blob-container:1.0.0' = [for name in sharedContainerNames: {
+//   name: 'deploy-container-${name}'
+//   params: {
+//     storageAccountName: storageAccountName
+//     containerName: name
+//   }
+// }]
 
 // ─── Outputs ───
 
-output keyVaultName string = sharedKeyVault.outputs.name
-output keyVaultUri string = sharedKeyVault.outputs.uri
-output keyVaultId string = sharedKeyVault.outputs.id
+output keyVaultName string = !empty(keyVaultName) ? sharedKeyVault.outputs.name : ''
+output keyVaultUri string = !empty(keyVaultName) ? sharedKeyVault.outputs.uri : ''
+output keyVaultId string = !empty(keyVaultName) ? sharedKeyVault.outputs.id : ''

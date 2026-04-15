@@ -24,8 +24,9 @@ variables:
     value: 'new-question-function-app/infra/main.bicep'
   - name: paramBasePath
     value: 'new-question-function-app/infra/params'
-  - name: dependenciesFile
-    value: 'new-question-function-app/infra/shared-dependencies.json'
+  # Blob preflight disabled — blob containers owned by app team
+  # - name: dependenciesFile
+  #   value: 'new-question-function-app/infra/shared-dependencies.json'
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -36,8 +37,6 @@ stages:
       appName: 'new-question-function-app'
       appType: 'function'
       planType: 'consumption'
-      dependenciesFile: $(dependenciesFile)
-      qaStorageAccountName: '<qa-shared-storage-account-name>'
       bicepFile: $(bicepFile)
       qaParamFile: '$(paramBasePath)/qa.bicepparam'
       uatParamFile: '$(paramBasePath)/uat.bicepparam'

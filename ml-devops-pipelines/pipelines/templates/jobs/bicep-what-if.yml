@@ -11,9 +11,9 @@ parameters:
     type: string
   - name: paramFile
     type: string
-  - name: checkoutApp
-    type: boolean
-    default: true
+  - name: extraRepos
+    type: object
+    default: []
 
 jobs:
   - job: WhatIf_${{ replace(parameters.appName, '-', '_') }}_${{ parameters.environment }}
@@ -22,8 +22,8 @@ jobs:
       vmImage: 'ubuntu-latest'
     steps:
       - checkout: self
-      - ${{ if parameters.checkoutApp }}:
-        - checkout: app-repo
+      - ${{ each repo in parameters.extraRepos }}:
+        - checkout: ${{ repo }}
 
       - task: AzureCLI@2
         displayName: 'Restore Bicep Modules'

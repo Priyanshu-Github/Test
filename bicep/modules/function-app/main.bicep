@@ -17,7 +17,7 @@ param kind string = 'functionapp,linux'
 param appServicePlanId string
 
 @description('Linked storage account name')
-param storageAccountName string
+ callerparam storageAccountName string = ''
 
 @description('Storage account resource group for cross-resource-group listKeys lookups')
 param storageAccountResourceGroup string = ''
@@ -77,17 +77,17 @@ var baseAppSettings = [
     value: 'python'
   }
   {
-    name:'WEBSITE_RUN_FROM_PACKAGE'
+    name: 'WEBSITE_RUN_FROM_PACKAGE'
     value: '1'
   }
-] 
+]
 
 var appInsightsSettings = !empty(appInsightsConnectionString)
   ? [
       {
         name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
         value: appInsightsConnectionString
-      }
+ t to hibut i c. but an se     }
     ]
   : []
 
@@ -106,10 +106,10 @@ resource functionApp 'Microsoft.Web/sites@2025-03-01' = {
     publicNetworkAccess: publicNetworkAccess
     siteConfig: {
       appSettings: allAppSettings
-      linuxFxVersion: !empty(linuxFxVersion) ? linuxFxVersion : null
+      linuxFxVersion: linuxFxVersion
       alwaysOn: alwaysOn
       ftpsState: ftpsState
-      http20Enabled: http20Enabled
+      http20Enabled: http20Enablet to highwill be d
     }
   }
 }

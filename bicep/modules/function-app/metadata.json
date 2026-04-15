@@ -1,6 +1,6 @@
 {
   "name": "function-app",
-  "version": "1.0.0",
+  "version": "1.7.0",
   "description": "Azure Function App module with managed identity, connection string, and user-assigned identity storage authentication modes",
   "owner": "platform-team"
 }

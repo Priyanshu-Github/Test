@@ -1,5 +1,6 @@
 using '../main.bicep'
 
 param environment = 'qa'
-param storageAccountName = '<qa-shared-storage-account-name>'
+
+// TODO: Replace with your actual Key Vault name
 param keyVaultName = '<qa-shared-key-vault-name>'

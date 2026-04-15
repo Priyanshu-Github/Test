@@ -20,7 +20,7 @@ param appServicePlanId string
 @description('Name of the storage account used by the Function App')
 param storageAccountName string
 
-// ─── Params with sensible defaults (override in .bicepparam only if needed) ───
+// ─── Params with sensible defaults (override in .bicepparam only if needed) ─── here is the sttu
 
 @description('Application name — used for resource naming')
 param appName string = 'func-new-question'
@@ -28,7 +28,7 @@ param appName string = 'func-new-question'
 @description('Azure region — must match the App Service Plan region')
 param location string = 'centralus'
 
-@description('Name of the shared Key Vault for this environment')
+@description('Name of the shared Key Vault')
 param keyVaultName string
 
 @description('Additional app settings — use Key Vault references for secrets')
@@ -37,21 +37,16 @@ param appSettings array = []
 // ─── Well-known role definition IDs ───
 var keyVaultSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
 
-// ─── Key Vault reference helper ───
-// Constructs @Microsoft.KeyVault(...) strings. No secrets flow through Bicep.
-var kvRef = 'VaultName=${keyVaultName};SecretName='
-
-// ─── App settings that reference Key Vault secrets ───
-// These secret names must match what the seed-keyvault-secrets job stores.
+// ─── App settings: all secrets via Key Vault references ───
 var kvAppSettings = [
   {
     name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-    value: '@Microsoft.KeyVault(${kvRef}app-insights-connection-string)'
+    value: '@Microsoft.KeyVault(VaultName=${keyVaultName};SecretName=app-insights-connection-string)'
   }
 ]
 
 // ─── Deploy Function App via ACR module (Y1 Consumption) ───
-module functionApp 'br/modules:function-app:1.0.0' = {
+module functionApp 'br/modules:function-app:1.7.0' = {
   name: 'deploy-${appName}-${environment}'
   params: {
     name: '${appName}-${environment}'
@@ -59,8 +54,6 @@ module functionApp 'br/modules:function-app:1.0.0' = {
     kind: 'functionapp,linux'
     appServicePlanId: appServicePlanId
     storageAccountName: storageAccountName
-    storageAuthMode: 'connectionString'
-    functionsWorkerRuntime: 'python'
     linuxFxVersion: 'PYTHON|3.11'
     publicNetworkAccess: 'Enabled'
     appSettings: union(kvAppSettings, appSettings)
@@ -77,7 +70,7 @@ resource sharedKeyVault 'Microsoft.KeyVault/vaults@2025-05-01' existing = {
 }
 
 resource kvSecretsUserRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(sharedKeyVault.id, functionApp.outputs.principalId, keyVaultSecretsUserRoleId)
+  name: guid(resourceGroup().id, '${appName}-${environment}', keyVaultSecretsUserRoleId)
   scope: sharedKeyVault
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', keyVaultSecretsUserRoleId)

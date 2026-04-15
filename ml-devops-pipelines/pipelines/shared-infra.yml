@@ -18,7 +18,7 @@ trigger:
       - release
   paths:
     include:
-      - shared/**
+      - Templates/shared/**
 
 pr:
   branches:
@@ -26,13 +26,38 @@ pr:
       - release
   paths:
     include:
-      - shared/**
+      - Templates/shared/**
 
-# ─── Variable Groups ───
-# External secrets that need to be seeded into Key Vault.
-# Create these in Azure DevOps → Pipelines → Library → Variable Groups.
-# Mark each variable as secret (lock icon) so values are masked in logs.
 variables:
+  # ─── Paths ───
+  - name: bicepFile
+    value: 'Templates/shared/main.bicep'
+  - name: paramBasePath
+    value: 'Templates/shared/params'
+
+  # ─── QA ───
+  - name: qaServiceConnection
+    value: 'nexworks-devops-nonprod-cus'
+  - name: qaResourceGroup
+    value: 'qa-Edison-ml'
+  - name: qaKeyVaultName
+    value: 'kv-dacedisondemotest'
+
+  # ─── UAT ───
+  # TODO: Update with real UAT values
+  - name: uatServiceConnection
+    value: '<UAT_SERVICE_CONNECTION>'
+  - name: uatResourceGroup
+    value: '<UAT_RESOURCE_GROUP>'
+
+  # ─── Prod ───
+  # TODO: Update with real Prod values
+  - name: prodServiceConnection
+    value: '<PROD_SERVICE_CONNECTION>'
+  - name: prodResourceGroup
+    value: '<PROD_RESOURCE_GROUP>'
+
+  # ─── Variable Groups (secrets) ───
   - group: vg-ml-external-secrets-qa
 
 pool:
@@ -41,23 +66,23 @@ pool:
 stages:
   - template: templates/stages/release-shared-infra.yml
     parameters:
-      qaServiceConnection: 'sc-infra-qa'
-      qaResourceGroup: 'rg-shared-qa'
-      uatServiceConnection: 'sc-infra-uat'
-      uatResourceGroup: 'rg-shared-uat'
-      prodServiceConnection: 'sc-infra-prod'
-      prodResourceGroup: 'rg-shared-prod'
+      bicepFile: $(bicepFile)
+      qaParamFile: '$(paramBasePath)/qa.bicepparam'
+      uatParamFile: '$(paramBasePath)/uat.bicepparam'
+      prodParamFile: '$(paramBasePath)/prod.bicepparam'
+      qaServiceConnection: $(qaServiceConnection)
+      qaResourceGroup: $(qaResourceGroup)
+      uatServiceConnection: $(uatServiceConnection)
+      uatResourceGroup: $(uatResourceGroup)
+      prodServiceConnection: $(prodServiceConnection)
+      prodResourceGroup: $(prodResourceGroup)
 
       # ─── KV secret seeding (QA) ───
-      qaKeyVaultName: '<qa-shared-key-vault-name>'
-      qaStorageAccountName: '<qa-shared-storage-account-name>'
-      qaAppInsightsName: '<qa-app-insights-name>'
-      qaAppInsightsResourceGroup: 'rg-shared-qa'
-
-      # External secrets from Variable Group → Key Vault.
-      # Variable names (e.g., $(some-api-key)) must match the Variable Group.
+      qaKeyVaultName: $(qaKeyVaultName)
+      # Maps Variable Group variables → KV secret names
+      # name = KV secret name (hyphens), value = VG variable (any format)
       externalSecrets:
-        - name: 'some-api-key'
-          value: $(some-api-key)
-        # - name: 'third-party-credential'
-        #   value: $(third-party-credential)
+        - name: 'storage-connection-string'
+          value: $(storage-connection-string)
+        - name: 'app-insights-connection-string'
+          value: $(app-insights-connection-string)
