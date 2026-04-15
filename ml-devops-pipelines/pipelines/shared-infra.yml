@@ -80,9 +80,12 @@ stages:
       # ─── KV secret seeding (QA) ───
       qaKeyVaultName: $(qaKeyVaultName)
       # Maps Variable Group variables → KV secret names
-      # name = KV secret name (hyphens), value = VG variable (any format)
-      externalSecrets:
-        - name: 'storage-connection-string'
-          value: $(storage-connection-string)
-        - name: 'app-insights-connection-string'
-          value: $(app-insights-connection-string)
+      # name = KV secret name (hyphens, lowercase)
+      # value = Azure DevOps variable macro from variable group
+      externalSecrets: []
+      # Example pattern for app secrets:
+      # externalSecrets:
+      #   - name: 'claude-api-key'
+      #     value: $(CLAUDE_API_KEY)
+      #   - name: 'db-password'
+      #     value: $(DB_PASSWORD)
