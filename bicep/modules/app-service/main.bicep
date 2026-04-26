@@ -1,70 +1,118 @@
-@description('App Service name')
+@description('Web App name')
+@minLength(2)
+@maxLength(60)
 param name string
 
 @description('Azure region')
 param location string
 
-@description('Tags to apply to the App Service')
-param tags object = {}
+@description('Web app kind')
+@allowed([
+  'app,linux'
+  'app'
+])
+param kind string = 'app,linux'
 
 @description('App Service Plan resource ID')
 param appServicePlanId string
 
-@description('Kind of App Service. Use app,app,linux for Linux apps.')
-param kind string = 'app'
+@description('Linux FX version (e.g. NODE|20-lts, DOTNETCORE|8.0, PYTHON|3.11). Ignored for Windows webapps.')
+param linuxFxVersion string = 'NODE|20-lts'
 
-@description('HTTPS-only enforcement')
-param httpsOnly bool = true
+@description('Startup command for Linux Web App. Leave empty to use stack default.')
+param appCommandLine string = ''
 
-@description('Optional site configuration object')
-param siteConfig object = {}
+@description('Always On setting; not supported on Free/Shared plans')
+param alwaysOn bool = true
 
-@description('App settings as name/value pairs')
+@description('FTP/FTPS state')
+@allowed([
+  'AllAllowed'
+  'FtpsOnly'
+  'Disabled'
+])
+param ftpsState string = 'Disabled'
+
+@description('Enable HTTP/2')
+param http20Enabled bool = true
+
+@description('Minimum TLS version')
+@allowed([
+  '1.0'
+  '1.1'
+  '1.2'
+  '1.3'
+])
+param minTlsVersion string = '1.2'
+
+@description('Enable client affinity (ARR sticky sessions)')
+param clientAffinityEnabled bool = false
+
+@description('Enable WebSockets')
+param webSocketsEnabled bool = false
+
+@description('Health check path. Leave empty to disable.')
+param healthCheckPath string = ''
+
+@description('Public network access setting')
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param publicNetworkAccess string = 'Enabled'
+
+@description('Route all outbound traffic through VNet integration. Only takes effect when VNet integration is configured separately.')
+param vnetRouteAllEnabled bool = false
+
+@description('App settings array. Caller owns all secrets (APPLICATIONINSIGHTS_CONNECTION_STRING, WEBSITE_RUN_FROM_PACKAGE, etc.).')
 param appSettings array = []
 
-@description('Optional Log Analytics workspace resource ID for diagnostics')
-param logAnalyticsWorkspaceId string = ''
+@description('Connection strings array. Each item: { name, connectionString, type }.')
+param connectionStrings array = []
 
-var normalizedAppSettings = [for setting in appSettings: {
-  name: setting.name
-  value: setting.value
-}]
+@description('CORS configuration. Pass { allowedOrigins: [], supportCredentials: false } to disable CORS.')
+param cors object = {
+  allowedOrigins: []
+  supportCredentials: false
+}
 
-resource appService 'Microsoft.Web/sites@2024-11-01' = {
+@description('Resource ID of the User-Assigned Managed Identity to attach to this Web App.')
+param userAssignedIdentityResourceId string
+
+resource webApp 'Microsoft.Web/sites@2025-03-01' = {
   name: name
   location: location
-  tags: tags
   kind: kind
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentityResourceId}': {}
+    }
+  }
   properties: {
+    reserved: kind == 'app,linux'
     serverFarmId: appServicePlanId
-    httpsOnly: httpsOnly
-    siteConfig: union(siteConfig, {
-      appSettings: normalizedAppSettings
-    })
+    httpsOnly: true
+    publicNetworkAccess: publicNetworkAccess
+    clientAffinityEnabled: clientAffinityEnabled
+    keyVaultReferenceIdentity: userAssignedIdentityResourceId
+    siteConfig: {
+      appSettings: appSettings
+      connectionStrings: connectionStrings
+      linuxFxVersion: linuxFxVersion
+      appCommandLine: appCommandLine
+      alwaysOn: alwaysOn
+      ftpsState: ftpsState
+      http20Enabled: http20Enabled
+      minTlsVersion: minTlsVersion
+      webSocketsEnabled: webSocketsEnabled
+      vnetRouteAllEnabled: vnetRouteAllEnabled
+      healthCheckPath: healthCheckPath
+      cors: cors
+    }
   }
 }
 
-#disable-next-line use-recent-api-versions // Newer diagnostics type metadata in linter is currently inconsistent for this schema.
-resource diagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
-  name: '${name}-diag'
-  scope: appService
-  properties: {
-    workspaceId: logAnalyticsWorkspaceId
-    logs: [
-      {
-        categoryGroup: 'allLogs'
-        enabled: true
-      }
-    ]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: true
-      }
-    ]
-  }
-}
-
-output id string = appService.id
-output appServiceName string = appService.name
-output defaultHostName string = appService.properties.defaultHostName
+output id string = webApp.id
+output name string = webApp.name
+output defaultHostName string = webApp.properties.defaultHostName

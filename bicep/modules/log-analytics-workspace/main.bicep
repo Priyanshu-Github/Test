@@ -11,7 +11,8 @@ param location string
   'PerGB2018'
   'Standalone'
   'PerNode'
-  'CapacityReservation'
+  'Standard'
+  'Premium'
 ])
 param skuName string = 'PerGB2018'
 

@@ -1,6 +1,6 @@
 {
   "name": "app-service",
-  "version": "1.0.0",
-  "description": "Azure App Service Web App module with optional diagnostics",
+  "version": "2.0.0",
+  "description": "Azure App Service (Web App) module. Requires userAssignedIdentityResourceId — used for both identity attachment and keyVaultReferenceIdentity so Key Vault references resolve via the UAMI. Caller owns all secrets via appSettings/connectionStrings. Diagnostics are deployed via a separate module.",
   "owner": "platform-team"
 }

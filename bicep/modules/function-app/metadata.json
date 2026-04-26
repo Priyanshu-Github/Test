@@ -1,6 +1,6 @@
 {
   "name": "function-app",
-  "version": "1.7.0",
-  "description": "Azure Function App module with managed identity, connection string, and user-assigned identity storage authentication modes",
+  "version": "3.0.1",
+  "description": "Azure Function App module. Requires userAssignedIdentityResourceId — used for both identity attachment and keyVaultReferenceIdentity so Key Vault references resolve via the UAMI. Caller owns all secrets via appSettings.",
   "owner": "platform-team"
 }

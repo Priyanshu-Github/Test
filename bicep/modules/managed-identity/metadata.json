@@ -1,0 +1,6 @@
+{
+  "name": "managed-identity",
+  "version": "1.0.0",
+  "description": "User-Assigned Managed Identity module. Exposes principalId, clientId, and resource ID for consumption by workload resources and role assignments.",
+  "owner": "platform-team"
+}

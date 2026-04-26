@@ -82,6 +82,47 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-06-01' = {
   }
 }
 
+resource diagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'diag-${name}'
+  scope: storageAccount
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    metrics: [
+      {
+        category: 'Transaction'
+        enabled: true
+      }
+    ]
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2025-06-01' existing = {
+  name: 'default'
+  parent: storageAccount
+}
+
+resource blobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (!empty(logAnalyticsWorkspaceId)) {
+  name: 'diag-blob-${name}'
+  scope: blobService
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'StorageRead'
+        enabled: true
+      }
+      {
+        category: 'StorageWrite'
+        enabled: true
+      }
+      {
+        category: 'StorageDelete'
+        enabled: true
+      }
+    ]
+  }
+}
+
 output id string = storageAccount.id
 output name string = storageAccount.name
 output primaryEndpoints object = storageAccount.properties.primaryEndpoints

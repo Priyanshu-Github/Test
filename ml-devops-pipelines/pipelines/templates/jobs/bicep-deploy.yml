@@ -92,3 +92,50 @@ jobs:
               --query properties.outputs -o json)
             echo "##vso[task.setvariable variable=deploymentOutputs;isOutput=true]$OUTPUTS"
         name: outputs
+
+      - task: AzureCLI@2
+        displayName: 'Verify UAMI Role Assignments'
+        condition: succeeded()
+        inputs:
+          azureSubscription: ${{ parameters.serviceConnection }}
+          scriptType: 'bash'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            set -e
+
+            OUTPUTS=$(az deployment group show \
+              --resource-group ${{ parameters.resourceGroup }} \
+              --name "${{ parameters.appName }}-$(buildId)" \
+              --query properties.outputs -o json)
+
+            # Extract any output key containing "principalId" (UAMI principal IDs)
+            PRINCIPAL_IDS=$(echo "$OUTPUTS" | jq -r 'to_entries[] | select(.key | test("[Pp]rincipal[Ii]d")) | .value.value' 2>/dev/null || echo "")
+
+            if [ -z "$PRINCIPAL_IDS" ]; then
+              echo "No managed identity principalId outputs found in deployment. Skipping verification."
+              exit 0
+            fi
+
+            for PID in $PRINCIPAL_IDS; do
+              echo ""
+              echo "=== Role assignments for principalId: $PID ==="
+              ASSIGNMENTS=$(az role assignment list \
+                --assignee-object-id "$PID" \
+                --assignee-principal-type ServicePrincipal \
+                --all \
+                --query "[].{role:roleDefinitionName, scope:scope}" \
+                -o table 2>/dev/null || echo "")
+
+              if [ -z "$ASSIGNMENTS" ] || [ "$(echo "$ASSIGNMENTS" | wc -l)" -lt 3 ]; then
+                echo "##vso[task.logissue type=warning]No role assignments found for principalId $PID. Bicep role assignments may have failed to apply."
+                echo "Listing role assignment resources from deployment..."
+                az deployment group show \
+                  --resource-group ${{ parameters.resourceGroup }} \
+                  --name "${{ parameters.appName }}-$(buildId)" \
+                  --query "properties.outputResources[?contains(id, 'Microsoft.Authorization/roleAssignments')].id" \
+                  -o tsv
+              else
+                echo "$ASSIGNMENTS"
+              fi
+            done
+        name: verifyRoles

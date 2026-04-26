@@ -21,25 +21,8 @@ param location string = 'centralus'
 // Log Analytics Workspace
 // ──────────────────────────────────────────
 
-@description('Name of the shared Log Analytics workspace. Empty skips creation.')
-param logAnalyticsWorkspaceName string = ''
-
-@description('Existing Log Analytics workspace resource ID. If provided, creation is skipped and this workspace is reused.')
+@description('Resource ID of an existing shared Log Analytics workspace managed outside this template')
 param logAnalyticsWorkspaceResourceId string = ''
-
-@description('Log Analytics workspace SKU')
-@allowed([
-  'PerGB2018'
-  'Standalone'
-  'PerNode'
-  'CapacityReservation'
-])
-param logAnalyticsSkuName string = 'PerGB2018'
-
-@description('Log Analytics retention period in days')
-@minValue(30)
-@maxValue(730)
-param logAnalyticsRetentionInDays int = 30
 
 // ──────────────────────────────────────────
 // Shared resources catalogs
@@ -72,23 +55,7 @@ param keyVaultPublicNetworkAccess string = 'Enabled'
 // Derived values
 // ──────────────────────────────────────────
 
-var deployLogAnalytics = !empty(logAnalyticsWorkspaceName) && empty(logAnalyticsWorkspaceResourceId)
-
-module sharedLogAnalytics 'br/modules:log-analytics-workspace:1.0.0' = if (deployLogAnalytics) {
-  name: 'deploy-shared-law-${environment}'
-  params: {
-    name: logAnalyticsWorkspaceName
-    location: location
-    skuName: logAnalyticsSkuName
-    retentionInDays: logAnalyticsRetentionInDays
-  }
-}
-
-var resolvedLogAnalyticsWorkspaceId = !empty(logAnalyticsWorkspaceResourceId)
-  ? logAnalyticsWorkspaceResourceId
-  : (!empty(logAnalyticsWorkspaceName) ? sharedLogAnalytics.outputs.id : '')
-
-var deployAppInsights = !empty(resolvedLogAnalyticsWorkspaceId)
+var resolvedLogAnalyticsWorkspaceId = !empty(logAnalyticsWorkspaceResourceId) ? logAnalyticsWorkspaceResourceId : ''
 
 // ──────────────────────────────────────────
 // Shared Storage Accounts
@@ -111,7 +78,7 @@ module sharedStorageAccounts 'br/modules:storage-account:1.0.0' = [for (storage,
       defaultAction: 'Deny'
       bypass: 'AzureServices, Logging, Metrics'
     }
-    logAnalyticsWorkspaceId: resolvedLogAnalyticsWorkspaceId
+    logAnalyticsWorkspaceId: storage.?logAnalyticsWorkspaceId ?? resolvedLogAnalyticsWorkspaceId
   }
 }]
 
@@ -135,25 +102,18 @@ module sharedAppServicePlans 'br/modules:app-service-plan:1.0.0' = [for (plan, i
 // Shared App Insights (workspace-based)
 // ──────────────────────────────────────────
 
-module sharedAppInsights 'br/modules:app-insights:1.0.0' = [for (appi, i) in appInsightsComponents: if (deployAppInsights) {
+module sharedAppInsights 'br/modules:app-insights:1.0.0' = [for (appi, i) in appInsightsComponents: {
   name: 'deploy-shared-appi-${environment}-${i}'
   params: {
     name: appi.name
     location: appi.?location ?? location
     kind: appi.?kind ?? 'web'
     applicationType: appi.?applicationType ?? 'web'
-    workspaceResourceId: resolvedLogAnalyticsWorkspaceId
+    workspaceResourceId: appi.?logAnalyticsWorkspaceId ?? resolvedLogAnalyticsWorkspaceId
     retentionInDays: appi.?retentionInDays ?? 90
   }
 }]
 
-var appInsightsLoopSource = deployAppInsights ? appInsightsComponents : []
-var appInsightsOutputValue = [for (appi, i) in appInsightsLoopSource: {
-  key: appi.?key ?? appi.name
-  name: sharedAppInsights[i].outputs.name
-  id: sharedAppInsights[i].outputs.id
-  connectionString: sharedAppInsights[i].outputs.connectionString
-}]
 
 // ──────────────────────────────────────────
 // Shared Key Vault
@@ -174,8 +134,8 @@ module sharedKeyVault 'br/modules:key-vault:1.0.0' = if (!empty(keyVaultName)) {
 // ──────────────────────────────────────────
 
 output logAnalyticsWorkspaceId string = resolvedLogAnalyticsWorkspaceId
-output logAnalyticsWorkspaceName string = deployLogAnalytics ? sharedLogAnalytics.outputs.name : ''
-output appInsightsSkippedBecauseWorkspaceMissing bool = !deployAppInsights && length(appInsightsComponents) > 0
+output logAnalyticsWorkspaceName string = !empty(resolvedLogAnalyticsWorkspaceId) ? last(split(resolvedLogAnalyticsWorkspaceId, '/')) : ''
+output appInsightsSkippedBecauseWorkspaceMissing bool = false
 
 output storageAccountsOutput array = [for (storage, i) in storageAccounts: {
   key: storage.?key ?? storage.name
@@ -190,7 +150,12 @@ output appServicePlansOutput array = [for (plan, i) in appServicePlans: {
   skuName: plan.skuName
 }]
 
-output appInsightsOutput array = appInsightsOutputValue
+output appInsightsOutput array = [for (appi, i) in appInsightsComponents: {
+  key: appi.?key ?? appi.name
+  name: sharedAppInsights[i].outputs.name
+  id: sharedAppInsights[i].outputs.id
+  connectionString: sharedAppInsights[i].outputs.connectionString
+}]
 
 output keyVaultName string = !empty(keyVaultName) ? sharedKeyVault.outputs.name : ''
 output keyVaultUri string = !empty(keyVaultName) ? sharedKeyVault.outputs.uri : ''

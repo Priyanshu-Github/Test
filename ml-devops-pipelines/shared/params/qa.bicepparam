@@ -3,8 +3,8 @@ using '../main.bicep'
 param environment = 'qa'
 param location = 'centralus'
 
-// Shared monitoring foundation
-param logAnalyticsWorkspaceName = 'law-qa-edison-ml-01'
+// Shared monitoring foundation (created outside this template)
+param logAnalyticsWorkspaceResourceId = '<qa-log-analytics-workspace-resource-id>'
 
 // Shared Key Vault (used by all apps via KV references)
 param keyVaultName = 'kv-dacedisondemotest'
@@ -16,6 +16,8 @@ param storageAccounts = [
     key: 'shared'
     name: 'stqaedisonshared01'
     allowSharedKeyAccess: true
+    // Optional per-resource override:
+    // logAnalyticsWorkspaceId: '<qa-log-analytics-workspace-resource-id>'
   }
 ]
 
@@ -31,11 +33,13 @@ param appServicePlans = [
   }
 ]
 
-// Shared Application Insights components (workspace-based)
+// Shared Application Insights components
 // NOTE: Replace placeholder names if your naming standard differs.
 param appInsightsComponents = [
   {
     key: 'shared'
     name: 'appi-qa-shared-01'
+    // Optional per-resource override:
+    // logAnalyticsWorkspaceId: '<qa-log-analytics-workspace-resource-id>'
   }
 ]
