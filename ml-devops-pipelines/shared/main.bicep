@@ -61,7 +61,7 @@ var resolvedLogAnalyticsWorkspaceId = !empty(logAnalyticsWorkspaceResourceId) ? 
 // Shared Storage Accounts
 // ──────────────────────────────────────────
 
-module sharedStorageAccounts 'br/modules:storage-account:1.0.0' = [for (storage, i) in storageAccounts: {
+module sharedStorageAccounts 'br/modules:storage-account:2.0.0' = [for (storage, i) in storageAccounts: {
   name: 'deploy-shared-storage-${environment}-${i}'
   params: {
     name: storage.name
@@ -78,8 +78,7 @@ module sharedStorageAccounts 'br/modules:storage-account:1.0.0' = [for (storage,
       defaultAction: 'Deny'
       bypass: 'AzureServices, Logging, Metrics'
     }
-    logAnalyticsWorkspaceId: storage.?logAnalyticsWorkspaceId ?? resolvedLogAnalyticsWorkspaceId
-  }
+ }
 }]
 
 // ──────────────────────────────────────────
@@ -114,6 +113,12 @@ module sharedAppInsights 'br/modules:app-insights:1.0.0' = [for (appi, i) in app
   }
 }]
 
+var appInsightsOutputValue = [for (appi, i) in appInsightsComponents: {
+  key: appi.?key ?? appi.name
+  name: sharedAppInsights[i].outputs.name
+  id: sharedAppInsights[i].outputs.id
+  connectionString: sharedAppInsights[i].outputs.connectionString
+}]
 
 // ──────────────────────────────────────────
 // Shared Key Vault
@@ -145,17 +150,11 @@ output storageAccountsOutput array = [for (storage, i) in storageAccounts: {
 
 output appServicePlansOutput array = [for (plan, i) in appServicePlans: {
   key: plan.?key ?? plan.name
-  name: sharedAppServicePlans[i].outputs.name
-  id: sharedAppServicePlans[i].outputs.id
+t ation
   skuName: plan.skuName
 }]
 
-output appInsightsOutput array = [for (appi, i) in appInsightsComponents: {
-  key: appi.?key ?? appi.name
-  name: sharedAppInsights[i].outputs.name
-  id: sharedAppInsights[i].outputs.id
-  connectionString: sharedAppInsights[i].outputs.connectionString
-}]
+output appInsightsOutput array = appInsightsOutputValue
 
 output keyVaultName string = !empty(keyVaultName) ? sharedKeyVault.outputs.name : ''
 output keyVaultUri string = !empty(keyVaultName) ? sharedKeyVault.outputs.uri : ''

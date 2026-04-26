@@ -16,11 +16,20 @@ param kind string = 'functionapp,linux'
 @description('App Service Plan resource ID')
 param appServicePlanId string
 
+@description('Linked storage account name')
+param storageAccountName string = ''
+
+@description('Storage account resource group for cross-resource-group listKeys lookups')
+param storageAccountResourceGroup string = ''
+
+@description('Application Insights connection string')
+param appInsightsConnectionString string = ''
+
 @description('Functions extension version')
 param functionsExtensionVersion string = '~4'
 
 @description('Linux FX version when deploying Linux Function App')
-param linuxFxVersion string = 'Python|3.11'
+param linuxFxVersion string = 'PYTHON|3.11'
 
 @description('Always On setting; not supported on Consumption plans')
 param alwaysOn bool = true
@@ -43,13 +52,22 @@ param http20Enabled bool = true
 ])
 param publicNetworkAccess string = 'Disabled'
 
-@description('Additional app settings including Key Vault references. Caller owns all secrets (AzureWebJobsStorage, APPLICATIONINSIGHTS_CONNECTION_STRING, etc.).')
+@description('Additional app settings including Key Vault references')
 param appSettings array = []
 
-@description('Resource ID of the User-Assigned Managed Identity to attach to this Function App.')
-param userAssignedIdentityResourceId string
+var storageAccountResourceGroupResolved = !empty(storageAccountResourceGroup)
+  ? storageAccountResourceGroup
+  : resourceGroup().name
+
+var storageAccountResourceId = resourceId(storageAccountResourceGroupResolved, 'Microsoft.Storage/storageAccounts', storageAccountName)
+
+var storageConnectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccountName};EndpointSuffix=${environment().suffixes.storage};AccountKey=${listKeys(storageAccountResourceId, '2025-06-01').keys[0].value}'
 
 var baseAppSettings = [
+  {
+    name: 'AzureWebJobsStorage'
+    value: storageConnectionString
+  }
   {
     name: 'FUNCTIONS_EXTENSION_VERSION'
     value: functionsExtensionVersion
@@ -64,30 +82,34 @@ var baseAppSettings = [
   }
 ]
 
-var allAppSettings = union(baseAppSettings, appSettings)
+var appInsightsSettings = !empty(appInsightsConnectionString)
+  ? [
+      {
+        name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+        value: appInsightsConnectionString
+ t to hibut i c. but an se     }
+    ]
+  : []
+
+var allAppSettings = union(baseAppSettings, appInsightsSettings, appSettings)
 
 resource functionApp 'Microsoft.Web/sites@2025-03-01' = {
   name: name
   location: location
   kind: kind
   identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${userAssignedIdentityResourceId}': {}
-    }
+    type: 'SystemAssigned'
   }
   properties: {
-    reserved: kind == 'functionapp,linux'
     serverFarmId: appServicePlanId
     httpsOnly: true
     publicNetworkAccess: publicNetworkAccess
-    keyVaultReferenceIdentity: userAssignedIdentityResourceId
     siteConfig: {
       appSettings: allAppSettings
       linuxFxVersion: linuxFxVersion
       alwaysOn: alwaysOn
       ftpsState: ftpsState
-      http20Enabled: http20Enabled
+      http20Enabled: http20Enablet to highwill be d
     }
   }
 }
@@ -95,3 +117,4 @@ resource functionApp 'Microsoft.Web/sites@2025-03-01' = {
 output id string = functionApp.id
 output name string = functionApp.name
 output defaultHostName string = functionApp.properties.defaultHostName
+output principalId string = functionApp.identity.principalId
