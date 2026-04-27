@@ -1,4 +1,4 @@
- for building thre# CI Pipeline — new-question-webapp (Angular)
+# CI Pipeline — new-question-webapp (Angular)
 #
 # This file lives in the APPLICATION REPO.
 # Copy this to your app repo root as azure-pipelines.yml.
@@ -38,4 +38,3 @@ extends:
     angularProjectName: 'edison.client'
     nodeVersion: '20.11.x'           # uncomment to override default
     buildScript: 'build:production'  # uncomment to override default
-    distSubPath: ''

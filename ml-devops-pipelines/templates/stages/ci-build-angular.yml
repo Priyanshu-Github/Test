@@ -1,14 +1,14 @@
 # CI Build Template — Angular Web Apps (App Service Linux)
 #
 # Design:
-#   1. Fully parameterized (appName, nodeVersion, angularProjectName, distSubPath, buildScript)
+#   1. Fully parameterized (appName, nodeVersion, angularProjectName, buildScript)
 #   2. Designed for use with `extends` (security boundary — devs can't inject steps)
 #   3. Linting is non-blocking (existing codebase is rough; will be tightened later)
 #   4. No unit tests (intentional — see CLAUDE.md / org policy)
 #   5. Security scan on dependencies (npm audit, warning only)
 #   6. Build metadata stamped into artifact for traceability
 #   7. Build-once philosophy — same artifact flows QA → UAT → Prod (default buildScript: build:production)
-#   8. Explicit dist contract — wrapper declares distSubPath; template fails fast if angular.json drifts.
+#   8. Explicit dist contract — flat Angular output only (dist/<project>).
 #      No auto-detection: silent layout drift would mask broken builds.
 #   9. Artifact contract validated before publish (required files, file sizes, JS bundle count)
 #  10. Artifact published as build artifact named 'drop' (matches function-app template)
@@ -21,19 +21,9 @@ parameters:
     type: string
     default: '20.19.x'
   - name: angularProjectName
-    # Must match the project name in angular.json. Combined with distSubPath, drives
-    # the dist path: dist/<angularProjectName>/<distSubPath>
+    # Must match the project name in angular.json.
+    # Dist path contract is fixed: dist/<angularProjectName>
     type: string
-  - name: distSubPath
-    # Subfolder under dist/<angularProjectName> where the browser bundle lands.
-    #   - ''         → flat layout (angular.json: outputPath.browser = "")
-    #   - 'browser'  → default Angular 17+ subfolder layout
-    # Restricted enum: extending requires a template PR — prevents silent layout drift.
-    type: string
-    default: ''
-    values:
-      - ''
-      - 'browser'
   - name: buildScript
     # npm script to invoke. Defaults to build:production (build-once principle).
     # Override per app only if env-specific bundling is unavoidable.
@@ -61,10 +51,7 @@ stages:
           commitSha: $(Build.SourceVersion)
           branchName: $(Build.SourceBranchName)
           npmCacheFolder: $(Pipeline.Workspace)/.npm
-          ${{ if eq(parameters.distSubPath, '') }}:
-            distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}
-          ${{ else }}:
-            distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}/${{ parameters.distSubPath }}
+          distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}
         steps:
           - checkout: self
 
@@ -77,10 +64,16 @@ stages:
                 npm | "$(Agent.OS)"
               path: $(npmCacheFolder)
 
-          - task: NodeTool@0
+          - task: UseNode@1
             displayName: 'Set Node Version to ${{ parameters.nodeVersion }}'
             inputs:
-              versionSpec: ${{ parameters.nodeVersion }}
+              version: ${{ parameters.nodeVersion }}
+
+          - bash: |
+              echo "Build contract:"
+              echo "  angularProjectName: ${{ parameters.angularProjectName }}"
+              echo "  expected distDir:   $(distDir)"
+            displayName: 'Print Build Contract'
 
           - bash: |
               npm config set cache "$(npmCacheFolder)" --location=project
@@ -112,19 +105,26 @@ stages:
           - bash: |
               set -e
               if [ ! -d "$(distDir)" ]; then
+                DIST_ROOT="$(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}"
                 echo "##vso[task.logissue type=error]Expected dist folder not found at: $(distDir)"
                 echo ""
                 echo "=== Diagnostics ==="
                 echo "  angularProjectName param: ${{ parameters.angularProjectName }}"
-                echo "  distSubPath param:        '${{ parameters.distSubPath }}'"
                 echo ""
                 echo "=== Contents of dist/ ==="
                 ls -la "$(Build.SourcesDirectory)/dist/" 2>/dev/null || echo "  (no dist/ folder produced)"
                 echo ""
+                echo "=== Dist project folders ==="
+                ls -1 "$(Build.SourcesDirectory)/dist/" 2>/dev/null || true
+                if [ -d "${DIST_ROOT}/browser" ]; then
+                  echo ""
+                  echo "Detected nested browser folder: ${DIST_ROOT}/browser"
+                  echo "Flat contract expects output at: ${DIST_ROOT}"
+                  echo "If browser output is intentional, update the shared template contract."
+                fi
+                echo ""
                 echo "=== Resolution ==="
-                echo "  Confirm angular.json outputPath matches the wrapper's distSubPath value:"
-                echo "    Flat layout (outputPath.browser = '')      → distSubPath: ''"
-                echo "    Subfolder layout (default Angular 17+)     → distSubPath: 'browser'"
+                echo "  Confirm angular.json outputPath targets flat layout: dist/${{ parameters.angularProjectName }}"
                 exit 1
               fi
               echo "{\"appName\": \"${{ parameters.appName }}\", \"buildId\": \"$(buildId)\", \"commitSha\": \"$(commitSha)\", \"branch\": \"$(branchName)\", \"nodeVersion\": \"${{ parameters.nodeVersion }}\", \"buildScript\": \"${{ parameters.buildScript }}\", \"buildDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$(distDir)/build-info.json"
