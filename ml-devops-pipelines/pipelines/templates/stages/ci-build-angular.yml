@@ -1,0 +1,117 @@
+# CI Build Template — Angular Web Apps (App Service Linux)
+#
+# Design:
+#   1. Fully parameterized (appName, nodeVersion, angularProjectName, buildScript)
+#   2. Designed for use with `extends` (security boundary — devs can't inject steps)
+#   3. Linting is non-blocking (existing codebase is rough; will be tightened later)
+#   4. No unit tests (intentional — see CLAUDE.md / org policy)
+#   5. Security scan on dependencies (npm audit, warning only)
+#   6. Build metadata stamped into artifact for traceability
+#   7. Build-once philosophy — same artifact flows QA → UAT → Prod (default buildScript: build:production)
+#   8. Artifact published as build artifact named 'drop' (matches function-app template; consumed by release pipeline)
+
+parameters:
+  - name: appName
+    type: string
+  - name: nodeVersion
+    type: string
+    default: '20.11.x'
+  - name: angularProjectName
+    # Must match the project name in angular.json — drives dist path: dist/<angularProjectName>/browser
+    type: string
+  - name: buildScript
+    # npm script to invoke. Defaults to build:production (build-once principle).
+    # Override per app only if env-specific bundling is unavoidable.
+    type: string
+    default: 'build:production'
+  - name: enableLinting
+    type: boolean
+    default: true
+  - name: enableSecurityScan
+    type: boolean
+    default: true
+
+stages:
+  - stage: Build
+    displayName: 'Build — ${{ parameters.appName }}'
+    jobs:
+      - job: Build
+        displayName: 'Build Angular Web App'
+        pool:
+          vmImage: 'ubuntu-latest'
+        variables:
+          buildId: $(Build.BuildId)
+          srcDir: $(Build.SourcesDirectory)
+          workDir: $(System.DefaultWorkingDirectory)
+          commitSha: $(Build.SourceVersion)
+          branchName: $(Build.SourceBranchName)
+          distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}/browser
+          npmCacheFolder: $(Pipeline.Workspace)/.npm
+        steps:
+          - checkout: self
+
+          - task: Cache@2
+            displayName: 'Cache npm'
+            inputs:
+              key: 'npm | "$(Agent.OS)" | "${{ parameters.nodeVersion }}" | package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)" | "${{ parameters.nodeVersion }}"
+                npm | "$(Agent.OS)"
+              path: $(npmCacheFolder)
+
+          - task: NodeTool@0
+            displayName: 'Set Node Version to ${{ parameters.nodeVersion }}'
+            inputs:
+              versionSpec: ${{ parameters.nodeVersion }}
+
+          - bash: |
+              npm config set cache "$(npmCacheFolder)" --location=project
+              npm ci --prefer-offline --no-audit --no-fund
+            displayName: 'Install Dependencies (npm ci)'
+
+          - ${{ if parameters.enableLinting }}:
+            - bash: |
+                if npm run | grep -qE '^\s+lint$'; then
+                  echo "Running lint (non-blocking)..."
+                  npm run lint
+                else
+                  echo "##vso[task.logissue type=warning]No 'lint' script defined in package.json — skipping."
+                fi
+              displayName: 'Lint (non-blocking)'
+              continueOnError: true
+
+          - ${{ if parameters.enableSecurityScan }}:
+            - bash: |
+                echo "Scanning dependencies for known vulnerabilities (high+)..."
+                npm audit --audit-level=high || true
+                echo "##vso[task.logissue type=warning]Dependency vulnerabilities may exist — review pipeline logs. Build will continue."
+              displayName: 'Security Scan — Dependencies (warning only)'
+
+          - bash: |
+              npm run ${{ parameters.buildScript }}
+            displayName: 'Build (${{ parameters.buildScript }})'
+
+          - bash: |
+              if [ ! -d "$(distDir)" ]; then
+                echo "##vso[task.logissue type=error]Expected dist folder not found at: $(distDir)"
+                echo "Check angular.json outputPath and the angularProjectName parameter."
+                exit 1
+              fi
+              echo "{\"appName\": \"${{ parameters.appName }}\", \"buildId\": \"$(buildId)\", \"commitSha\": \"$(commitSha)\", \"branch\": \"$(branchName)\", \"nodeVersion\": \"${{ parameters.nodeVersion }}\", \"buildScript\": \"${{ parameters.buildScript }}\", \"buildDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > $(distDir)/build-info.json
+              echo "Build metadata:"
+              cat $(distDir)/build-info.json
+            displayName: 'Stamp Build Metadata'
+
+          - task: ArchiveFiles@2
+            displayName: 'Create Zip File'
+            inputs:
+              rootFolderOrFile: $(distDir)
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(workDir)/builds/${{ parameters.appName }}-$(buildId).zip'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Build Artifact'
+            inputs:
+              PathtoPublish: '$(workDir)/builds/${{ parameters.appName }}-$(buildId).zip'
+              artifactName: 'drop'

@@ -1,0 +1,57 @@
+# CD Pipeline — new-question-webapp (Angular)
+#
+# Thin wrapper. All logic lives in templates/stages/release-app.yml.
+# To onboard a new webapp, copy this file and update the values below.
+
+trigger: none
+
+pr: none
+
+resources:
+  repositories:
+    - repository: app-repo
+      type: git
+      name: 'ML Platform/new-question-webapp'
+      ref: release
+  pipelines:
+    - pipeline: ci-build
+      # TODO: Update to final CI pipeline name once created in Azure DevOps
+      source: '<CI_PIPELINE_NAME>'
+      trigger: none
+
+variables:
+  - name: bicepFile
+    value: 'new-question-webapp/infra/main.bicep'
+  - name: paramBasePath
+    value: 'new-question-webapp/infra/params'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+  - template: ../templates/stages/release-app.yml
+    parameters:
+      appName: 'new-question-webapp'
+      appType: 'appservice'
+      planType: 'consumption' # ignored for appservice routing; kept for schema compatibility
+      bicepFile: $(bicepFile)
+      qaParamFile: '$(paramBasePath)/qa.bicepparam'
+      uatParamFile: '$(paramBasePath)/uat.bicepparam'
+      prodParamFile: '$(paramBasePath)/prod.bicepparam'
+
+      # QA — auto-deploy (no approval gate)
+      qaServiceConnection: 'nexworks-devops-nonprod-cus'
+      qaResourceGroup: 'qa-Edison-ml'
+      qaAppResourceName: 'app-new-question-webapp-qa'
+
+      # UAT — manual approval via Azure DevOps Environment
+      # TODO: Update with real UAT values
+      uatServiceConnection: '<UAT_SERVICE_CONNECTION>'
+      uatResourceGroup: '<UAT_RESOURCE_GROUP>'
+      uatAppResourceName: '<UAT_APP_RESOURCE_NAME>'
+
+      # Prod — manual approval via Azure DevOps Environment
+      # TODO: Update with real Prod values
+      prodServiceConnection: '<PROD_SERVICE_CONNECTION>'
+      prodResourceGroup: '<PROD_RESOURCE_GROUP>'
+      prodAppResourceName: '<PROD_APP_RESOURCE_NAME>'

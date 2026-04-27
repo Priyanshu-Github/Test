@@ -181,6 +181,16 @@ stages:
             resourceGroup: ${{ parameters.qaResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
 
+      - ${{ if eq(parameters.appType, 'appservice') }}:
+        - template: ../jobs/app-deploy-webapp.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'qa'
+            serviceConnection: ${{ parameters.qaServiceConnection }}
+            webAppName: ${{ parameters.qaAppResourceName }}
+            resourceGroup: ${{ parameters.qaResourceGroup }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_qa
+
   # ──────────────────────────────────────────
   # Stage 3: What-If UAT (preview changes for approvers)
   # ──────────────────────────────────────────
@@ -296,6 +306,16 @@ stages:
             resourceGroup: ${{ parameters.uatResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
 
+      - ${{ if eq(parameters.appType, 'appservice') }}:
+        - template: ../jobs/app-deploy-webapp.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'uat'
+            serviceConnection: ${{ parameters.uatServiceConnection }}
+            webAppName: ${{ parameters.uatAppResourceName }}
+            resourceGroup: ${{ parameters.uatResourceGroup }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_uat
+
   # ──────────────────────────────────────────
   # Stage 5: What-If Prod (preview changes for approvers)
   # ──────────────────────────────────────────
@@ -408,5 +428,15 @@ stages:
             environment: 'prod'
             serviceConnection: ${{ parameters.prodServiceConnection }}
             functionAppName: ${{ parameters.prodAppResourceName }}
+            resourceGroup: ${{ parameters.prodResourceGroup }}
+            dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod
+
+      - ${{ if eq(parameters.appType, 'appservice') }}:
+        - template: ../jobs/app-deploy-webapp.yml
+          parameters:
+            appName: ${{ parameters.appName }}
+            environment: 'prod'
+            serviceConnection: ${{ parameters.prodServiceConnection }}
+            webAppName: ${{ parameters.prodAppResourceName }}
             resourceGroup: ${{ parameters.prodResourceGroup }}
             dependsOn: DeployInfra_${{ replace(parameters.appName, '-', '_') }}_prod

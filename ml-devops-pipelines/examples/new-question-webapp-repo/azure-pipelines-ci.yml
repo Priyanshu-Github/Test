@@ -1,0 +1,40 @@
+# CI Pipeline — new-question-webapp (Angular)
+#
+# This file lives in the APPLICATION REPO.
+# Copy this to your app repo root as azure-pipelines.yml.
+#
+# Uses `extends` (not `template`) — developers CANNOT add arbitrary
+# stages, jobs, or steps. This is an Azure DevOps security boundary.
+# Combined with Required Templates in Org Settings, this ensures all
+# pipelines must use approved templates.
+
+# Auto-trigger: merge to release builds + publishes artifact
+trigger:
+  branches:
+    include:
+      - release
+
+# PR validation: build only (no artifact publish to release pipeline)
+pr:
+  branches:
+    include:
+      - release
+
+# Manual runs from feature/* branches are allowed via Azure DevOps UI
+# (Run Pipeline → select branch). Build stage runs, Publish stage is
+# skipped because it gates on branch = release.
+
+resources:
+  repositories:
+    - repository: templates
+      type: git
+      name: 'ML Platform/ml-devops-pipelines'
+      ref: master
+
+extends:
+  template: pipelines/templates/stages/ci-build-angular.yml@templates
+  parameters:
+    appName: 'new-question-webapp'
+    angularProjectName: 'edison.client'
+    # nodeVersion: '20.11.x'           # uncomment to override default
+    # buildScript: 'build:production'  # uncomment to override default
