@@ -1,24 +1,39 @@
 # CI Build Template — Angular Web Apps (App Service Linux)
 #
 # Design:
-#   1. Fully parameterized (appName, nodeVersion, angularProjectName, buildScript)
+#   1. Fully parameterized (appName, nodeVersion, angularProjectName, distSubPath, buildScript)
 #   2. Designed for use with `extends` (security boundary — devs can't inject steps)
 #   3. Linting is non-blocking (existing codebase is rough; will be tightened later)
 #   4. No unit tests (intentional — see CLAUDE.md / org policy)
 #   5. Security scan on dependencies (npm audit, warning only)
 #   6. Build metadata stamped into artifact for traceability
 #   7. Build-once philosophy — same artifact flows QA → UAT → Prod (default buildScript: build:production)
-#   8. Artifact published as build artifact named 'drop' (matches function-app template; consumed by release pipeline)
+#   8. Explicit dist contract — wrapper declares distSubPath; template fails fast if angular.json drifts.
+#      No auto-detection: silent layout drift would mask broken builds.
+#   9. Artifact contract validated before publish (required files, file sizes, JS bundle count)
+#  10. Artifact published as build artifact named 'drop' (matches function-app template)
 
 parameters:
   - name: appName
     type: string
   - name: nodeVersion
+    # Angular 20 requires Node ^20.19.0 || ^22.12.0. Default holds the 20.x LTS line.
     type: string
-    default: '20.11.x'
+    default: '20.19.x'
   - name: angularProjectName
-    # Must match the project name in angular.json — drives dist path: dist/<angularProjectName>/browser
+    # Must match the project name in angular.json. Combined with distSubPath, drives
+    # the dist path: dist/<angularProjectName>/<distSubPath>
     type: string
+  - name: distSubPath
+    # Subfolder under dist/<angularProjectName> where the browser bundle lands.
+    #   - ''         → flat layout (angular.json: outputPath.browser = "")
+    #   - 'browser'  → default Angular 17+ subfolder layout
+    # Restricted enum: extending requires a template PR — prevents silent layout drift.
+    type: string
+    default: ''
+    values:
+      - ''
+      - 'browser'
   - name: buildScript
     # npm script to invoke. Defaults to build:production (build-once principle).
     # Override per app only if env-specific bundling is unavoidable.
@@ -45,8 +60,11 @@ stages:
           workDir: $(System.DefaultWorkingDirectory)
           commitSha: $(Build.SourceVersion)
           branchName: $(Build.SourceBranchName)
-          distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}/browser
           npmCacheFolder: $(Pipeline.Workspace)/.npm
+          ${{ if eq(parameters.distSubPath, '') }}:
+            distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}
+          ${{ else }}:
+            distDir: $(Build.SourcesDirectory)/dist/${{ parameters.angularProjectName }}/${{ parameters.distSubPath }}
         steps:
           - checkout: self
 
@@ -92,15 +110,64 @@ stages:
             displayName: 'Build (${{ parameters.buildScript }})'
 
           - bash: |
+              set -e
               if [ ! -d "$(distDir)" ]; then
                 echo "##vso[task.logissue type=error]Expected dist folder not found at: $(distDir)"
-                echo "Check angular.json outputPath and the angularProjectName parameter."
+                echo ""
+                echo "=== Diagnostics ==="
+                echo "  angularProjectName param: ${{ parameters.angularProjectName }}"
+                echo "  distSubPath param:        '${{ parameters.distSubPath }}'"
+                echo ""
+                echo "=== Contents of dist/ ==="
+                ls -la "$(Build.SourcesDirectory)/dist/" 2>/dev/null || echo "  (no dist/ folder produced)"
+                echo ""
+                echo "=== Resolution ==="
+                echo "  Confirm angular.json outputPath matches the wrapper's distSubPath value:"
+                echo "    Flat layout (outputPath.browser = '')      → distSubPath: ''"
+                echo "    Subfolder layout (default Angular 17+)     → distSubPath: 'browser'"
                 exit 1
               fi
-              echo "{\"appName\": \"${{ parameters.appName }}\", \"buildId\": \"$(buildId)\", \"commitSha\": \"$(commitSha)\", \"branch\": \"$(branchName)\", \"nodeVersion\": \"${{ parameters.nodeVersion }}\", \"buildScript\": \"${{ parameters.buildScript }}\", \"buildDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > $(distDir)/build-info.json
-              echo "Build metadata:"
-              cat $(distDir)/build-info.json
+              echo "{\"appName\": \"${{ parameters.appName }}\", \"buildId\": \"$(buildId)\", \"commitSha\": \"$(commitSha)\", \"branch\": \"$(branchName)\", \"nodeVersion\": \"${{ parameters.nodeVersion }}\", \"buildScript\": \"${{ parameters.buildScript }}\", \"buildDate\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$(distDir)/build-info.json"
+              echo "Build metadata stamped at $(distDir)/build-info.json"
+              cat "$(distDir)/build-info.json"
             displayName: 'Stamp Build Metadata'
+
+          - bash: |
+              set -e
+              echo "Verifying artifact contract at: $(distDir)"
+
+              # Required: index.html must exist
+              if [ ! -f "$(distDir)/index.html" ]; then
+                echo "##vso[task.logissue type=error]Missing required file: index.html"
+                exit 1
+              fi
+
+              # Required: index.html non-trivial (Angular's index is typically >500 bytes)
+              INDEX_SIZE=$(stat -c%s "$(distDir)/index.html" 2>/dev/null || stat -f%z "$(distDir)/index.html")
+              if [ "$INDEX_SIZE" -lt 500 ]; then
+                echo "##vso[task.logissue type=error]index.html is suspiciously small (${INDEX_SIZE} bytes) — build may be incomplete"
+                exit 1
+              fi
+
+              # Required: at least 2 JS bundles (main + polyfills/runtime is the minimum)
+              JS_COUNT=$(find "$(distDir)" -maxdepth 1 -name "*.js" -type f | wc -l | tr -d ' ')
+              if [ "$JS_COUNT" -lt 2 ]; then
+                echo "##vso[task.logissue type=error]Expected ≥2 JS bundles in $(distDir), found ${JS_COUNT}"
+                ls -la "$(distDir)" || true
+                exit 1
+              fi
+
+              # Required: build-info.json stamped in previous step
+              if [ ! -f "$(distDir)/build-info.json" ]; then
+                echo "##vso[task.logissue type=error]Missing build-info.json — Stamp Build Metadata step did not produce it"
+                exit 1
+              fi
+
+              echo "Contract verified:"
+              echo "  index.html:        ${INDEX_SIZE} bytes"
+              echo "  JS bundles:        ${JS_COUNT}"
+              echo "  build-info.json:   present"
+            displayName: 'Verify Artifact Contract'
 
           - task: ArchiveFiles@2
             displayName: 'Create Zip File'
